@@ -2,7 +2,7 @@ package com.xnet.pulse.feature.chat
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +12,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,19 +26,62 @@ import com.xnet.pulse.core.model.MessageStatus
 import com.xnet.pulse.core.model.Role
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   val messages by viewModel.messages.collectAsState()
   val status by viewModel.status.collectAsState()
   val isStreaming by viewModel.isStreaming.collectAsState()
+  val conversations by viewModel.conversations.collectAsState(initial = emptyList())
   val listState = rememberLazyListState()
   val scope = rememberCoroutineScope()
+  var showDrawer by remember { mutableStateOf(false) }
+  var reportMessageId by remember { mutableStateOf<String?>(null) }
 
   LaunchedEffect(messages.size) {
     if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
   }
 
+  // Report dialog
+  if (reportMessageId != null) {
+    AlertDialog(
+      onDismissRequest = { reportMessageId = null },
+      title = { Text("Report Message") },
+      text = { Text("Flag this response as inappropriate or harmful?") },
+      confirmButton = { TextButton(onClick = { reportMessageId = null /* TODO: log report */ }) { Text("Report") } },
+      dismissButton = { TextButton(onClick = { reportMessageId = null }) { Text("Cancel") } },
+    )
+  }
+
+  // Conversation drawer
+  if (showDrawer) {
+    ModalBottomSheet(onDismissRequest = { showDrawer = false }) {
+      Column(Modifier.padding(16.dp)) {
+        TextButton(onClick = { viewModel.newConversation(); showDrawer = false }) { Text("+ New Chat") }
+        conversations.forEach { conv ->
+          ListItem(
+            headlineContent = { Text(conv.title) },
+            modifier = Modifier.clickable { viewModel.loadConversation(conv.id); showDrawer = false },
+            trailingContent = {
+              IconButton(onClick = { viewModel.deleteConversation(conv.id) }) {
+                Icon(Icons.Default.Delete, "Delete")
+              }
+            },
+          )
+        }
+      }
+    }
+  }
+
   Column(Modifier.fillMaxSize()) {
+    // Top bar
+    Surface(tonalElevation = 2.dp) {
+      Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { showDrawer = true }) { Icon(Icons.Default.Menu, "Conversations") }
+        Text("AIO Pulse", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+      }
+    }
+
     // Message list
     LazyColumn(
       state = listState,
@@ -45,7 +90,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
       contentPadding = PaddingValues(vertical = 12.dp),
     ) {
       items(messages, key = { it.id }) { msg ->
-        MessageBubble(msg)
+        MessageBubble(msg, onReport = if (msg.role == Role.ASSISTANT) {{ reportMessageId = msg.id }} else null)
       }
     }
 
@@ -66,7 +111,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage) {
+private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: (() -> Unit)? = null) {
   val isUser = msg.role == Role.USER
   val alignment = if (isUser) Alignment.End else Alignment.Start
   val bgColor = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
@@ -80,6 +125,11 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage) {
           Spacer(Modifier.height(4.dp))
         }
         Text(msg.content.ifBlank { if (msg.status == MessageStatus.STREAMING) "..." else "" }, style = MaterialTheme.typography.bodyMedium)
+      }
+    }
+    if (onReport != null) {
+      TextButton(onClick = onReport, modifier = Modifier.padding(start = 4.dp)) {
+        Text("Report", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
       }
     }
   }

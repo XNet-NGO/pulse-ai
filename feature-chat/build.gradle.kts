@@ -42,4 +42,5 @@ dependencies {
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.androidx.worker)
   implementation(libs.hilt.worker)
+  implementation(libs.coil.compose)
 }
