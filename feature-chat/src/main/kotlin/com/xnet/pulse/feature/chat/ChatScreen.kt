@@ -128,10 +128,10 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           Spacer(Modifier.height(4.dp))
         }
         val content = msg.content.ifBlank { if (msg.status == MessageStatus.STREAMING) "..." else "" }
-        if (!isUser && content.isNotBlank()) {
+        if (!isUser && content.isNotBlank() && msg.status != MessageStatus.STREAMING) {
           com.fluid.compose.UniversalMarkdown(
             content = content,
-            animateStreaming = msg.status == MessageStatus.STREAMING,
+            animateStreaming = false,
             modifier = Modifier.fillMaxWidth(),
           )
         } else {

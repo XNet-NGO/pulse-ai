@@ -16,7 +16,6 @@ import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -63,7 +62,6 @@ class PollinationsClient @Inject constructor() {
     val toolAcc = mutableMapOf<Int, Triple<String, String, StringBuilder>>()
     var inThinkTag = false
     var thinkTagName = ""
-    val latch = CountDownLatch(1)
 
     val es = EventSources.createFactory(client).newEventSource(request, object : EventSourceListener() {
       override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
@@ -73,13 +71,13 @@ class PollinationsClient @Inject constructor() {
           } else {
             trySend(StreamEvent.Done())
           }
-          latch.countDown()
+          channel.close()
           return
         }
         val chunk = try { JSONObject(data) } catch (_: Exception) { return }
         chunk.optJSONObject("error")?.let {
           trySend(StreamEvent.Error(it.optString("message", "Unknown error")))
-          latch.countDown()
+          channel.close()
           return
         }
         val choices = chunk.optJSONArray("choices") ?: return
@@ -108,12 +106,12 @@ class PollinationsClient @Inject constructor() {
 
         if (fr == "tool_calls" || (fr == "stop" && toolAcc.isNotEmpty())) {
           trySend(StreamEvent.ToolCalls(buildToolCalls(toolAcc)))
-          latch.countDown()
+          channel.close()
           return
         }
         if (fr == "stop" || fr == "end_turn" || fr == "length") {
           trySend(StreamEvent.Done(fr))
-          latch.countDown()
+          channel.close()
           return
         }
 
@@ -152,16 +150,13 @@ class PollinationsClient @Inject constructor() {
 
       override fun onFailure(eventSource: EventSource, t: Throwable?, response: okhttp3.Response?) {
         trySend(StreamEvent.Error(t?.message ?: "Connection failed"))
-        latch.countDown()
+        channel.close()
       }
 
-      override fun onClosed(eventSource: EventSource) { latch.countDown() }
+      override fun onClosed(eventSource: EventSource) { channel.close() }
     })
 
-    latch.await(3, TimeUnit.MINUTES)
-    es.cancel()
-    close()
-    awaitClose {}
+    awaitClose { es.cancel() }
   }.flowOn(Dispatchers.IO)
 
   fun imageUrl(prompt: String, width: Int = 1024, height: Int = 1024): String {
