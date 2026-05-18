@@ -1,0 +1,125 @@
+package com.xnet.pulse.feature.chat
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.xnet.pulse.core.model.MessageStatus
+import com.xnet.pulse.core.model.Role
+import kotlinx.coroutines.launch
+
+@Composable
+fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
+  val messages by viewModel.messages.collectAsState()
+  val status by viewModel.status.collectAsState()
+  val isStreaming by viewModel.isStreaming.collectAsState()
+  val listState = rememberLazyListState()
+  val scope = rememberCoroutineScope()
+
+  LaunchedEffect(messages.size) {
+    if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+  }
+
+  Column(Modifier.fillMaxSize()) {
+    // Message list
+    LazyColumn(
+      state = listState,
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
+      contentPadding = PaddingValues(vertical = 12.dp),
+    ) {
+      items(messages, key = { it.id }) { msg ->
+        MessageBubble(msg)
+      }
+    }
+
+    // Status animation
+    AnimatedVisibility(visible = status != null) {
+      StatusBar(status ?: "")
+    }
+
+    // Compose bar
+    ComposeBar(
+      enabled = !isStreaming,
+      onSend = { text ->
+        viewModel.send(text)
+        scope.launch { listState.animateScrollToItem(messages.size) }
+      },
+    )
+  }
+}
+
+@Composable
+private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage) {
+  val isUser = msg.role == Role.USER
+  val alignment = if (isUser) Alignment.End else Alignment.Start
+  val bgColor = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+  val shape = RoundedCornerShape(16.dp, 16.dp, if (isUser) 4.dp else 16.dp, if (isUser) 16.dp else 4.dp)
+
+  Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
+    Surface(shape = shape, color = bgColor, modifier = Modifier.widthIn(max = 320.dp)) {
+      Column(Modifier.padding(12.dp)) {
+        if (msg.reasoning.isNotBlank()) {
+          Text(msg.reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+          Spacer(Modifier.height(4.dp))
+        }
+        Text(msg.content.ifBlank { if (msg.status == MessageStatus.STREAMING) "..." else "" }, style = MaterialTheme.typography.bodyMedium)
+      }
+    }
+  }
+}
+
+@Composable
+private fun StatusBar(label: String) {
+  val alpha by rememberInfiniteTransition(label = "pulse").animateFloat(
+    initialValue = 0.4f, targetValue = 1f,
+    animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "alpha",
+  )
+  Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+    Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.alpha(alpha))
+  }
+}
+
+@Composable
+private fun ComposeBar(enabled: Boolean, onSend: (String) -> Unit) {
+  var text by remember { mutableStateOf("") }
+
+  Surface(tonalElevation = 3.dp) {
+    Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+      OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        modifier = Modifier.weight(1f),
+        placeholder = { Text("Message") },
+        shape = RoundedCornerShape(24.dp),
+        maxLines = 4,
+        enabled = enabled,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+        keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) { onSend(text.trim()); text = "" } }),
+      )
+      Spacer(Modifier.width(8.dp))
+      IconButton(
+        onClick = { if (text.isNotBlank()) { onSend(text.trim()); text = "" } },
+        enabled = enabled && text.isNotBlank(),
+      ) {
+        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = MaterialTheme.colorScheme.primary)
+      }
+    }
+  }
+}
