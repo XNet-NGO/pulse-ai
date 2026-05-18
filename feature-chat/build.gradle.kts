@@ -40,4 +40,6 @@ dependencies {
   implementation(libs.okhttp.sse)
   implementation(libs.jtokkit)
   implementation(libs.kotlinx.coroutines.android)
+  implementation(libs.androidx.worker)
+  implementation(libs.hilt.worker)
 }

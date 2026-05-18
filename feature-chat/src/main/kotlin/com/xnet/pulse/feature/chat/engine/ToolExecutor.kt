@@ -123,8 +123,13 @@ class ToolExecutor @Inject constructor(
   }
 
   private fun getLocation(): String {
-    // TODO: Implement with FusedLocationProvider + permission check
-    return "Location unavailable — permission not yet granted"
+    return try {
+      val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+      val loc = lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+        ?: lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
+        ?: return "Location unavailable — enable GPS or grant permission"
+      "Latitude: ${loc.latitude}, Longitude: ${loc.longitude}, Accuracy: ${loc.accuracy}m"
+    } catch (e: SecurityException) { "Location permission not granted" }
   }
 
   private fun openIntent(uri: String): String {
@@ -136,8 +141,25 @@ class ToolExecutor @Inject constructor(
   }
 
   private fun readCalendar(days: Int): String {
-    // TODO: Implement with CalendarContract query + permission check
-    return "Calendar access not yet granted"
+    return try {
+      val now = System.currentTimeMillis()
+      val end = now + days * 86400000L
+      val uri = android.provider.CalendarContract.Events.CONTENT_URI
+      val projection = arrayOf("title", "dtstart", "dtend", "eventLocation")
+      val selection = "dtstart >= ? AND dtstart <= ?"
+      val cursor = ctx.contentResolver.query(uri, projection, selection, arrayOf("$now", "$end"), "dtstart ASC")
+        ?: return "Calendar permission not granted"
+      val events = buildString {
+        while (cursor.moveToNext()) {
+          val title = cursor.getString(0) ?: "Untitled"
+          val start = java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.getDefault()).format(java.util.Date(cursor.getLong(1)))
+          val loc = cursor.getString(3)?.takeIf { it.isNotBlank() }?.let { " @ $it" } ?: ""
+          appendLine("• $title — $start$loc")
+        }
+      }
+      cursor.close()
+      events.ifBlank { "No events in the next $days days" }
+    } catch (e: SecurityException) { "Calendar permission not granted" }
   }
 
   private fun createEvent(args: Map<String, Any?>): String {
@@ -164,9 +186,18 @@ class ToolExecutor @Inject constructor(
     return "Alarm set for %02d:%02d".format(hour, minutes)
   }
 
-  private fun analyzeImage(url: String, question: String?): String {
-    // TODO: Send image to vision model via Pollinations
-    return "Image analysis not yet implemented"
+  private suspend fun analyzeImage(url: String, question: String?): String = withContext(Dispatchers.IO) {
+    val msgs = listOf(
+      JSONObject().put("role", "user").put("content", JSONArray().apply {
+        put(JSONObject().put("type", "text").put("text", question ?: "Describe this image in detail."))
+        put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", url)))
+      })
+    )
+    val sb = StringBuilder()
+    pollinationsClient.stream(msgs, "openai").collect { ev ->
+      if (ev is com.xnet.pulse.core.model.StreamEvent.Delta) sb.append(ev.text)
+    }
+    sb.toString().ifBlank { "Could not analyze image" }
   }
 
   private suspend fun imageGenerate(prompt: String): String {

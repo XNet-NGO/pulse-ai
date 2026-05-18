@@ -107,6 +107,7 @@ interface ChatDao {
 @Database(
   entities = [ConversationEntity::class, MessageEntity::class, MemoryEntity::class, SettingsKvEntity::class],
   version = 1,
+  exportSchema = false,
 )
 abstract class PulseDatabase : RoomDatabase() {
   abstract fun chatDao(): ChatDao

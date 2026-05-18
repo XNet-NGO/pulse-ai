@@ -35,6 +35,10 @@ class ChatViewModel @Inject constructor(
   private var currentConvId: String = UUID.randomUUID().toString()
   private var model = "openai"
 
+  init {
+    viewModelScope.launch { dao.insertConversation(ConversationEntity(id = currentConvId)) }
+  }
+
   fun loadConversation(id: String) {
     currentConvId = id
     viewModelScope.launch {
