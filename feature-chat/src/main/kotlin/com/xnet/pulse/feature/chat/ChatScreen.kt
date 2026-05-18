@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -12,11 +13,14 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -82,12 +86,21 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     }
   }
 
-  Column(Modifier.fillMaxSize()) {
+  Column(Modifier.fillMaxSize().imePadding()) {
     // Top bar
     Surface(tonalElevation = 2.dp) {
       Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { showDrawer = true }) { Icon(Icons.Default.Menu, "Conversations") }
         Text("AIO Pulse", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        var menuExpanded by remember { mutableStateOf(false) }
+        Box {
+          IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, "More") }
+          DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            DropdownMenuItem(text = { Text("Attach file") }, onClick = { menuExpanded = false /* TODO: launch picker */ }, leadingIcon = { Icon(Icons.Default.AttachFile, null) })
+            DropdownMenuItem(text = { Text("Library") }, onClick = { menuExpanded = false /* TODO: nav to library */ }, leadingIcon = { Icon(Icons.Default.Folder, null) })
+            DropdownMenuItem(text = { Text("New chat") }, onClick = { menuExpanded = false; viewModel.newConversation() }, leadingIcon = { Icon(Icons.Default.Add, null) })
+          }
+        }
       }
     }
 
@@ -108,7 +121,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
       StatusBar(status ?: "")
     }
 
-    // Compose bar
+    // Compose bar (floats above keyboard via imePadding on parent)
     ComposeBar(
       enabled = !isStreaming,
       onSend = { text ->
@@ -168,14 +181,11 @@ private fun StatusBar(label: String) {
 }
 
 @Composable
-private fun ComposeBar(enabled: Boolean, onSend: (String) -> Unit, onMic: () -> Unit = {}, onAttach: () -> Unit = {}, isListening: Boolean = false) {
+private fun ComposeBar(enabled: Boolean, onSend: (String) -> Unit, onMic: () -> Unit = {}, isListening: Boolean = false) {
   var text by remember { mutableStateOf("") }
 
   Surface(tonalElevation = 3.dp) {
-    Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-      IconButton(onClick = onAttach, enabled = enabled) {
-        Icon(Icons.Default.AttachFile, contentDescription = "Attach")
-      }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
       OutlinedTextField(
         value = text,
         onValueChange = { text = it },
