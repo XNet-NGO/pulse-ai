@@ -49,6 +49,8 @@ dependencies {
   // UniversalMarkdown AARs
   implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
   implementation("com.atlassian.commonmark:commonmark:0.15.2")
+  implementation("com.atlassian.commonmark:commonmark-ext-gfm-tables:0.15.2")
+  implementation("com.atlassian.commonmark:commonmark-ext-autolink:0.15.2")
   implementation(libs.androidx.appcompat)
 
   val bom = platform(libs.androidx.compose.bom)
