@@ -11,6 +11,7 @@ dependencyResolutionManagement {
   repositories {
     google()
     mavenCentral()
+    flatDir { dirs("${rootProject.projectDir}/app/libs") }
   }
 }
 rootProject.name = "aio-pulse"

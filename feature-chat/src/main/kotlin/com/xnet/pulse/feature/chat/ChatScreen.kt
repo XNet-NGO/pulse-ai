@@ -12,8 +12,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -124,7 +127,16 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           Text(msg.reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
           Spacer(Modifier.height(4.dp))
         }
-        Text(msg.content.ifBlank { if (msg.status == MessageStatus.STREAMING) "..." else "" }, style = MaterialTheme.typography.bodyMedium)
+        val content = msg.content.ifBlank { if (msg.status == MessageStatus.STREAMING) "..." else "" }
+        if (!isUser && content.isNotBlank()) {
+          com.fluid.compose.UniversalMarkdown(
+            content = content,
+            animateStreaming = msg.status == MessageStatus.STREAMING,
+            modifier = Modifier.fillMaxWidth(),
+          )
+        } else {
+          Text(content, style = MaterialTheme.typography.bodyMedium)
+        }
       }
     }
     if (onReport != null) {
@@ -147,11 +159,14 @@ private fun StatusBar(label: String) {
 }
 
 @Composable
-private fun ComposeBar(enabled: Boolean, onSend: (String) -> Unit) {
+private fun ComposeBar(enabled: Boolean, onSend: (String) -> Unit, onMic: () -> Unit = {}, onAttach: () -> Unit = {}, isListening: Boolean = false) {
   var text by remember { mutableStateOf("") }
 
   Surface(tonalElevation = 3.dp) {
     Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+      IconButton(onClick = onAttach, enabled = enabled) {
+        Icon(Icons.Default.AttachFile, contentDescription = "Attach")
+      }
       OutlinedTextField(
         value = text,
         onValueChange = { text = it },
@@ -163,12 +178,15 @@ private fun ComposeBar(enabled: Boolean, onSend: (String) -> Unit) {
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
         keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) { onSend(text.trim()); text = "" } }),
       )
-      Spacer(Modifier.width(8.dp))
-      IconButton(
-        onClick = { if (text.isNotBlank()) { onSend(text.trim()); text = "" } },
-        enabled = enabled && text.isNotBlank(),
-      ) {
-        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = MaterialTheme.colorScheme.primary)
+      Spacer(Modifier.width(4.dp))
+      if (text.isBlank()) {
+        IconButton(onClick = onMic, enabled = enabled) {
+          Icon(if (isListening) Icons.Default.MicOff else Icons.Default.Mic, contentDescription = "Voice", tint = if (isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+        }
+      } else {
+        IconButton(onClick = { onSend(text.trim()); text = "" }, enabled = enabled) {
+          Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = MaterialTheme.colorScheme.primary)
+        }
       }
     }
   }
