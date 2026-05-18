@@ -22,8 +22,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.xnet.pulse.core.model.MessageStatus
 import com.xnet.pulse.core.model.Role
@@ -134,6 +140,9 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
             animateStreaming = false,
             modifier = Modifier.fillMaxWidth(),
           )
+        } else if (!isUser && content.isNotBlank()) {
+          // Lightweight pre-render during streaming (like headless streamHtml)
+          StreamingText(content)
         } else {
           Text(content, style = MaterialTheme.typography.bodyMedium)
         }
@@ -190,4 +199,37 @@ private fun ComposeBar(enabled: Boolean, onSend: (String) -> Unit, onMic: () -> 
       }
     }
   }
+}
+
+@Composable
+private fun StreamingText(content: String) {
+  val codeBg = androidx.compose.ui.graphics.Color(0xFF1E1E1E)
+  val inlineBg = androidx.compose.ui.graphics.Color(0xFF2D2D2D)
+  val annotated = remember(content) {
+    buildAnnotatedString {
+      var i = 0
+      while (i < content.length) {
+        when {
+          content.startsWith("```", i) -> {
+            val end = content.indexOf("```", i + 3)
+            val block = if (end != -1) content.substring(i + 3, end) else content.substring(i + 3)
+            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, background = codeBg)) { append(block.trimStart('\n')) }
+            i = if (end != -1) end + 3 else content.length
+          }
+          content[i] == '`' -> {
+            val end = content.indexOf('`', i + 1)
+            if (end != -1) { withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = inlineBg)) { append(content.substring(i + 1, end)) }; i = end + 1 }
+            else { append('`'); i++ }
+          }
+          content.startsWith("**", i) -> {
+            val end = content.indexOf("**", i + 2)
+            if (end != -1) { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(content.substring(i + 2, end)) }; i = end + 2 }
+            else { append("**"); i += 2 }
+          }
+          else -> { append(content[i]); i++ }
+        }
+      }
+    }
+  }
+  Text(annotated, style = MaterialTheme.typography.bodyMedium)
 }
