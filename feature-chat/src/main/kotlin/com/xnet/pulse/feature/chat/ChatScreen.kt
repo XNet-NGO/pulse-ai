@@ -271,7 +271,11 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
             val mdContent = uiPattern.replace(content, "").trim()
             if (mdContent.isNotBlank()) {
               com.fluid.compose.UniversalMarkdown(content = mdContent, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, alt ->
-                val resolved = if (url.startsWith("/")) "file://${LocalContext.current.filesDir}/pulse$url" else url
+                val resolved = when {
+                  url.startsWith("file://") -> java.io.File(url.removePrefix("file://"))
+                  url.startsWith("/") -> java.io.File("${LocalContext.current.filesDir}/pulse$url")
+                  else -> url
+                }
                 coil.compose.AsyncImage(
                   model = resolved,
                   contentDescription = alt,
