@@ -182,7 +182,20 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
       )
       Spacer(Modifier.width(2.dp))
       if (text.isBlank()) {
-        IconButton(onClick = { if (isListening) voiceManager.stopListening() else voiceManager.startListening() }, enabled = !isStreaming) {
+        // Mic button with permission request
+        val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+          if (granted) voiceManager.startListening()
+        }
+        IconButton(onClick = {
+          if (isListening) voiceManager.stopListening()
+          else {
+            if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+              voiceManager.startListening()
+            } else {
+              micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+            }
+          }
+        }, enabled = !isStreaming) {
           Icon(if (isListening) Icons.Default.MicOff else Icons.Default.Mic, "Voice", tint = if (isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
       } else {
@@ -208,19 +221,33 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
         // Render attached images
         if (msg.imagePaths.isNotEmpty()) {
           msg.imagePaths.filter { it.isNotBlank() }.forEach { path ->
-            val bmp = remember(path) {
-              try {
-                val filePath = if (path.startsWith("file://")) path.removePrefix("file://") else path
-                android.graphics.BitmapFactory.decodeFile(filePath)
-              } catch (_: Exception) { null }
-            }
-            if (bmp != null) {
-              Image(
-                bitmap = bmp.asImageBitmap(),
+            if (path.startsWith("http://") || path.startsWith("https://")) {
+              // URL image - use Coil
+              coil.compose.AsyncImage(
+                model = coil.request.ImageRequest.Builder(LocalContext.current)
+                  .data(path)
+                  .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                  .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                  .crossfade(true)
+                  .build(),
                 contentDescription = null,
                 modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(bottom = 8.dp),
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
               )
+            } else {
+              // File path - decode bitmap
+              val filePath = if (path.startsWith("file://")) path.removePrefix("file://") else path
+              val bmp = remember(filePath) {
+                try { android.graphics.BitmapFactory.decodeFile(filePath) } catch (_: Exception) { null }
+              }
+              if (bmp != null) {
+                Image(
+                  bitmap = bmp.asImageBitmap(),
+                  contentDescription = null,
+                  modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(bottom = 8.dp),
+                  contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                )
+              }
             }
           }
         }
@@ -234,6 +261,8 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           isUser -> Text(content, style = MaterialTheme.typography.bodyMedium)
           msg.status == MessageStatus.STREAMING -> StreamingText(content)
           else -> {
+            // Render inline images from markdown
+            MessageImages(content)
             // Split into markdown and aiope-ui blocks
             val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
             val matches = uiPattern.findAll(content).toList()
@@ -289,57 +318,60 @@ private fun StreamingText(content: String) {
   val codeBg = Color(0xFF1E1E1E)
   val inlineBg = Color(0xFF2D2D2D)
 
-  // Extract and render inline images
+  // Don't render images during streaming — they'll render once message is complete
   val imgPattern = remember { Regex("""!\[([^\]]*)\]\(([^)]+)\)""") }
-  val images = imgPattern.findAll(content).toList()
-  val textContent = imgPattern.replace(content, "")
+  val textContent = imgPattern.replace(content, "[\u200B]") // placeholder
 
-  Column {
-    images.forEach { match ->
-      val url = match.groupValues[2]
-      coil.compose.AsyncImage(
-        model = coil.request.ImageRequest.Builder(LocalContext.current)
-          .data(url)
-          .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-          .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-          .build(),
-        contentDescription = match.groupValues[1],
-        modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(vertical = 4.dp),
-        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-      )
-    }
-    if (textContent.isNotBlank()) {
-      val annotated = buildAnnotatedString {
-        var i = 0
-        while (i < textContent.length) {
-          when {
-            textContent.startsWith("```", i) -> {
-              val end = textContent.indexOf("```", i + 3)
-              val block = if (end != -1) textContent.substring(i + 3, end) else textContent.substring(i + 3)
-              val code = block.substringAfter('\n', block)
-              withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, background = codeBg)) { append(code) }
-              i = if (end != -1) end + 3 else textContent.length
-            }
-            textContent[i] == '`' -> {
-              val end = textContent.indexOf('`', i + 1)
-              if (end != -1) { withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = inlineBg)) { append(textContent.substring(i + 1, end)) }; i = end + 1 }
-              else { append('`'); i++ }
-            }
-            textContent.startsWith("**", i) -> {
-              val end = textContent.indexOf("**", i + 2)
-              if (end != -1) { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(textContent.substring(i + 2, end)) }; i = end + 2 }
-              else { append("**"); i += 2 }
-            }
-            textContent.startsWith("### ", i) -> { i += 4 }
-            textContent.startsWith("## ", i) -> { i += 3 }
-            textContent.startsWith("# ", i) -> { i += 2 }
-            textContent.startsWith("- ", i) -> { append("• "); i += 2 }
-            else -> { append(textContent[i]); i++ }
-          }
+  val annotated = buildAnnotatedString {
+    var i = 0
+    while (i < textContent.length) {
+      when {
+        textContent.startsWith("```", i) -> {
+          val end = textContent.indexOf("```", i + 3)
+          val block = if (end != -1) textContent.substring(i + 3, end) else textContent.substring(i + 3)
+          val code = block.substringAfter('\n', block)
+          withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, background = codeBg)) { append(code) }
+          i = if (end != -1) end + 3 else textContent.length
         }
+        textContent[i] == '`' -> {
+          val end = textContent.indexOf('`', i + 1)
+          if (end != -1) { withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = inlineBg)) { append(textContent.substring(i + 1, end)) }; i = end + 1 }
+          else { append('`'); i++ }
+        }
+        textContent.startsWith("**", i) -> {
+          val end = textContent.indexOf("**", i + 2)
+          if (end != -1) { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(textContent.substring(i + 2, end)) }; i = end + 2 }
+          else { append("**"); i += 2 }
+        }
+        textContent.startsWith("### ", i) -> { i += 4 }
+        textContent.startsWith("## ", i) -> { i += 3 }
+        textContent.startsWith("# ", i) -> { i += 2 }
+        textContent.startsWith("- ", i) -> { append("• "); i += 2 }
+        else -> { append(textContent[i]); i++ }
       }
-      Text(annotated, style = MaterialTheme.typography.bodyMedium)
     }
+  }
+  Text(annotated, style = MaterialTheme.typography.bodyMedium)
+}
+
+/** Render images from completed message content */
+@Composable
+private fun MessageImages(content: String) {
+  val imgPattern = remember { Regex("""!\[([^\]]*)\]\(([^)]+)\)""") }
+  val images = remember(content) { imgPattern.findAll(content).toList() }
+  images.forEach { match ->
+    val url = match.groupValues[2]
+    coil.compose.AsyncImage(
+      model = coil.request.ImageRequest.Builder(LocalContext.current)
+        .data(url)
+        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+        .crossfade(true)
+        .build(),
+      contentDescription = match.groupValues[1],
+      modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp),
+      contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+    )
   }
 }
 
