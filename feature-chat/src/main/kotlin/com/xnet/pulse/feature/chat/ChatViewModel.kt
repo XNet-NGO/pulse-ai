@@ -21,6 +21,7 @@ import javax.inject.Inject
 class ChatViewModel @Inject constructor(
   private val dao: ChatDao,
   private val orchestrator: Orchestrator,
+  private val client: com.xnet.pulse.core.network.PollinationsClient,
   private val toolExecutor: ToolExecutor,
   val voiceManager: VoiceManager,
   val attachmentProcessor: AttachmentProcessor,
@@ -117,6 +118,24 @@ class ChatViewModel @Inject constructor(
     if (final != null) {
       _messages.value = _messages.value.map { if (it.id == assistantId) final else it }
       dao.insertMessage(final.toEntity())
+    }
+    // Generate title on first exchange
+    val msgCount = _messages.value.count { it.conversationId == currentConvId }
+    if (msgCount == 2) generateTitle()
+  }
+
+  private fun generateTitle() {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      try {
+        val userMsg = _messages.value.firstOrNull { it.role == Role.USER }?.content?.take(200) ?: return@launch
+        val msgs = listOf(JSONObject().put("role", "user").put("content", "Generate a short title (max 6 words, no quotes) for a conversation that starts with: $userMsg"))
+        val sb = StringBuilder()
+        client.stream(msgs, "nova-fast").collect { ev ->
+          if (ev is StreamEvent.Delta) sb.append(ev.text)
+        }
+        val title = sb.toString().trim().take(50)
+        if (title.isNotBlank()) dao.updateConversation(currentConvId, title)
+      } catch (_: Exception) {}
     }
   }
 
