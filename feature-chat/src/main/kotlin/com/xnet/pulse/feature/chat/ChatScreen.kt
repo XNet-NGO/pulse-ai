@@ -12,8 +12,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
@@ -290,7 +293,9 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
               AnimatedVisibility(visible = expanded || isActive) {
                 val lines = msg.reasoning.lines()
                 val display = if (isActive && lines.size > 6) lines.takeLast(6).joinToString("\n") else msg.reasoning
-                Text(display, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp).heightIn(max = 120.dp), lineHeight = 16.sp)
+                SelectionContainer {
+                  Text(display, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp).heightIn(max = 120.dp).verticalScroll(rememberScrollState()), lineHeight = 16.sp)
+                }
               }
             }
           }
@@ -442,16 +447,16 @@ private fun SettingsSheet() {
 }
 
 private fun toolIcon(name: String): String = when (name) {
-  "search_web" -> "🔍 Search"
-  "search_images" -> "🖼️ Images"
-  "fetch_url" -> "🌐 Fetch"
-  "write_file" -> "📝 Write"
-  "read_file" -> "📖 Read"
-  "list_directory" -> "📁 List"
-  "get_location" -> "📍 Location"
-  "image_generate" -> "🎨 Generate"
-  "memory_store" -> "💾 Remember"
-  "memory_recall" -> "🧠 Recall"
-  "open_intent" -> "🔗 Open"
-  else -> "⚙️ $name"
+  "search_web" -> "Search"
+  "search_images" -> "Images"
+  "fetch_url" -> "Fetch"
+  "write_file" -> "Write"
+  "read_file" -> "Read"
+  "list_directory" -> "Files"
+  "get_location" -> "Location"
+  "image_generate" -> "Generate"
+  "memory_store" -> "Remember"
+  "memory_recall" -> "Recall"
+  "open_intent" -> "Open"
+  else -> name
 }
