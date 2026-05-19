@@ -6,6 +6,7 @@ import com.xnet.pulse.core.model.*
 import com.xnet.pulse.core.network.Orchestrator
 import com.xnet.pulse.feature.chat.db.*
 import com.xnet.pulse.feature.chat.engine.ToolExecutor
+import com.xnet.pulse.feature.chat.engine.DirectoryManager
 import com.xnet.pulse.feature.chat.engine.VoiceManager
 import com.xnet.pulse.feature.chat.engine.AttachmentProcessor
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -84,6 +85,7 @@ class ChatViewModel @Inject constructor(
 
     val apiMessages = buildApiMessages()
     val tools = toolExecutor.buildToolDefs()
+    toolExecutor.conversationId = currentConvId
     val content = StringBuilder()
     val reasoning = StringBuilder()
 
@@ -166,7 +168,7 @@ class ChatViewModel @Inject constructor(
     else -> "Working..."
   }
 
-  fun deleteConversation(id: String) { viewModelScope.launch { dao.deleteConversation(id) } }
+  fun deleteConversation(id: String) { viewModelScope.launch { dao.deleteConversation(id); DirectoryManager.deleteConversation(id) } }
 
   private fun MessageEntity.toDomain() = ChatMessage(id, conversationId, Role.valueOf(role.uppercase()), content, reasoning, imagePaths.split(",").filter { it.isNotBlank() }, emptyList(), timestamp, MessageStatus.SENT)
   private fun ChatMessage.toEntity() = MessageEntity(id, conversationId, role.name.lowercase(), content, reasoning, imagePaths.joinToString(","), timestamp, status.name.lowercase())
@@ -188,6 +190,13 @@ Constraints:
 - If you are uncertain, say so and propose a path forward rather than guessing.
 - Do not access contacts, SMS, or calendar unless the user explicitly asks.
 - Do not make up information — use tools to verify facts.
+
+File System:
+- write_file writes to a per-conversation workspace directory. Files are deleted when the conversation is removed.
+- Use write_file for any file the user asks you to create: svg, html, css, py, txt, md, latex, json, etc.
+- list_directory and read_file are scoped to the conversation workspace.
+- image_generate saves to a per-conversation generated/ directory.
+- Do not include directory paths in filenames — just use the filename (e.g. "chart.svg" not "/workspace/chart.svg").
 
 Response Style:
 - Use markdown for code blocks with language tags.

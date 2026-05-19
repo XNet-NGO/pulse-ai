@@ -8,6 +8,10 @@ import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
 class PulseApp : Application(), ImageLoaderFactory {
+  override fun onCreate() {
+    super.onCreate()
+    com.xnet.pulse.feature.chat.engine.DirectoryManager.init(this)
+  }
   override fun newImageLoader() = ImageLoader.Builder(this)
     .components { add(SvgDecoder.Factory()) }
     .build()

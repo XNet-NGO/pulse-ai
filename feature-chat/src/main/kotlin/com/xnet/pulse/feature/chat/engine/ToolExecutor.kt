@@ -27,6 +27,7 @@ class ToolExecutor @Inject constructor(
   private val dao: ChatDao,
   private val pollinationsClient: PollinationsClient,
 ) {
+  var conversationId: String = ""
   private val sandboxRoot: File get() = File(ctx.filesDir, "pulse").also { it.mkdirs() }
   private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
   private var searchUrl = "https://search.xnet.ngo"
@@ -104,22 +105,23 @@ class ToolExecutor @Inject constructor(
   }
 
   private fun listDirectory(path: String): String {
-    val dir = resolveSandboxPath(path)
+    val dir = File(DirectoryManager.workspace(conversationId), path.removePrefix("/"))
     if (!dir.exists()) return "Directory not found: $path"
     return dir.listFiles()?.joinToString("\n") { (if (it.isDirectory) "📁 " else "📄 ") + it.name } ?: "Empty"
   }
 
   private fun readFile(path: String): String {
-    val file = resolveSandboxPath(path)
+    val file = File(DirectoryManager.workspace(conversationId), path.removePrefix("/"))
     if (!file.exists()) return "File not found: $path"
     return file.readText().take(50000)
   }
 
   private fun writeFile(path: String, content: String): String {
-    val file = resolveSandboxPath(path)
+    val dir = DirectoryManager.workspace(conversationId)
+    val file = File(dir, path.removePrefix("/"))
     file.parentFile?.mkdirs()
     file.writeText(content)
-    return "Written ${content.length} chars to $path"
+    return "Written ${content.length} chars to ${file.name}"
   }
 
   private fun getLocation(): String {
@@ -202,16 +204,15 @@ class ToolExecutor @Inject constructor(
 
   private suspend fun imageGenerate(prompt: String): String {
     val url = pollinationsClient.imageUrl(prompt)
-    // Save to sandbox
     val filename = "gen_${System.currentTimeMillis()}.png"
-    val file = File(sandboxRoot, "images/$filename").also { it.parentFile?.mkdirs() }
+    val file = File(DirectoryManager.generated(conversationId), filename)
     withContext(Dispatchers.IO) {
       val req = Request.Builder().url(url).build()
       http.newCall(req).execute().use { resp ->
         resp.body?.byteStream()?.use { input -> file.outputStream().use { input.copyTo(it) } }
       }
     }
-    return "![Generated image](file://${file.absolutePath})\n\nSaved to /images/$filename"
+    return "![Generated image](file://${file.absolutePath})"
   }
 
   private suspend fun memoryStore(key: String, content: String, category: String): String {
@@ -225,8 +226,4 @@ class ToolExecutor @Inject constructor(
     return memories.joinToString("\n") { "• ${it.key}: ${it.content} [${it.category}]" }
   }
 
-  private fun resolveSandboxPath(path: String): File {
-    val clean = path.removePrefix("/")
-    return File(sandboxRoot, clean)
-  }
 }
