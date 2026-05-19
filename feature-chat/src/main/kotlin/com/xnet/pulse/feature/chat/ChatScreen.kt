@@ -18,6 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -265,22 +267,30 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           }
         }
         if (showThinking && msg.reasoning.isNotBlank()) {
-          var expanded by remember { mutableStateOf(msg.status == MessageStatus.STREAMING) }
+          val isActive = msg.status == MessageStatus.STREAMING && msg.content.isBlank()
+          var expanded by remember { mutableStateOf(isActive) }
+          LaunchedEffect(msg.status) { if (msg.status != MessageStatus.STREAMING) expanded = false }
           Surface(
             shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
             onClick = { expanded = !expanded },
           ) {
             Column(Modifier.padding(8.dp)) {
               Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("💭 Thinking", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                if (isActive) {
+                  val alpha by rememberInfiniteTransition(label = "tp").animateFloat(0.4f, 1f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "ta")
+                  Text("Thinking", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary.copy(alpha = alpha))
+                } else {
+                  Text("Thought", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Spacer(Modifier.weight(1f))
-                Text(if (expanded) "▲" else "▼", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, "Toggle", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
               }
-              if (expanded) {
-                Spacer(Modifier.height(4.dp))
-                Text(msg.reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+              AnimatedVisibility(visible = expanded || isActive) {
+                val lines = msg.reasoning.lines()
+                val display = if (isActive && lines.size > 6) lines.takeLast(6).joinToString("\n") else msg.reasoning
+                Text(display, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp).heightIn(max = 120.dp), lineHeight = 16.sp)
               }
             }
           }
