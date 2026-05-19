@@ -89,7 +89,12 @@ class ChatViewModel @Inject constructor(
 
     orchestrator.run(apiMessages, model, tools) { name, args ->
       _status.value = toolStatusLabel(name)
-      toolExecutor.execute(name, args)
+      val result = toolExecutor.execute(name, args)
+      if (name == "image_generate") {
+        val imgRegex = Regex("""!\[([^\]]*)\]\(([^)]+)\)""")
+        imgRegex.find(result)?.let { content.append("\n${it.value}"); updateAssistant(assistantId, content.toString(), reasoning.toString()) }
+      }
+      result
     }.collect { event ->
       when (event) {
         is StreamEvent.Delta -> { content.append(event.text); updateAssistant(assistantId, content.toString(), reasoning.toString()) }
