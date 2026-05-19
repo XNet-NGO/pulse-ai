@@ -265,10 +265,36 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           }
         }
         if (showThinking && msg.reasoning.isNotBlank()) {
-          Text(msg.reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-          Spacer(Modifier.height(4.dp))
+          var expanded by remember { mutableStateOf(false) }
+          Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+            onClick = { expanded = !expanded },
+          ) {
+            Column(Modifier.padding(8.dp)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("💭 Thinking", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.weight(1f))
+                Text(if (expanded) "▲" else "▼", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+              if (expanded) {
+                Spacer(Modifier.height(4.dp))
+                Text(msg.reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+              }
+            }
+          }
         }
         val content = msg.content.ifBlank { if (msg.status == MessageStatus.STREAMING) "..." else "" }
+        if (msg.toolsUsed.isNotEmpty()) {
+          Row(Modifier.padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            msg.toolsUsed.forEach { tool ->
+              Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)) {
+                Text(toolIcon(tool), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), color = MaterialTheme.colorScheme.primary)
+              }
+            }
+          }
+        }
         when {
           content.isBlank() -> {}
           isUser -> Text(content, style = MaterialTheme.typography.bodyMedium)
@@ -403,4 +429,19 @@ private fun SettingsSheet() {
     Text("AIO Pulse v1.0.0\nBy XNet NGO", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(16.dp))
   }
+}
+
+private fun toolIcon(name: String): String = when (name) {
+  "search_web" -> "🔍 Search"
+  "search_images" -> "🖼️ Images"
+  "fetch_url" -> "🌐 Fetch"
+  "write_file" -> "📝 Write"
+  "read_file" -> "📖 Read"
+  "list_directory" -> "📁 List"
+  "get_location" -> "📍 Location"
+  "image_generate" -> "🎨 Generate"
+  "memory_store" -> "💾 Remember"
+  "memory_recall" -> "🧠 Recall"
+  "open_intent" -> "🔗 Open"
+  else -> "⚙️ $name"
 }

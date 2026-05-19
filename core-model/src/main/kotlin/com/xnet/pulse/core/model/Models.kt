@@ -14,6 +14,7 @@ data class ChatMessage(
   val role: Role,
   val content: String,
   val reasoning: String = "",
+  val toolsUsed: List<String> = emptyList(),
   val imagePaths: List<String> = emptyList(),
   val apiImageData: List<String> = emptyList(),
   val timestamp: Long = System.currentTimeMillis(),

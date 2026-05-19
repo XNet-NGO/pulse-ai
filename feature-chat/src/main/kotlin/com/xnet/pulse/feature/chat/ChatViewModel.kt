@@ -88,23 +88,25 @@ class ChatViewModel @Inject constructor(
     toolExecutor.conversationId = currentConvId
     val content = StringBuilder()
     val reasoning = StringBuilder()
+    val toolsUsed = mutableListOf<String>()
 
     orchestrator.run(apiMessages, model, tools) { name, args ->
       _status.value = toolStatusLabel(name)
+      if (name !in toolsUsed) toolsUsed.add(name)
       val result = toolExecutor.execute(name, args)
       if (name == "image_generate") {
         val imgRegex = Regex("""!\[([^\]]*)\]\(([^)]+)\)""")
-        imgRegex.find(result)?.let { content.append("\n${it.value}"); updateAssistant(assistantId, content.toString(), reasoning.toString()) }
+        imgRegex.find(result)?.let { content.append("\n${it.value}"); updateAssistant(assistantId, content.toString(), reasoning.toString(), toolsUsed) }
       }
       result
     }.collect { event ->
       when (event) {
-        is StreamEvent.Delta -> { content.append(event.text); updateAssistant(assistantId, content.toString(), reasoning.toString()) }
-        is StreamEvent.Reasoning -> { reasoning.append(event.text); updateAssistant(assistantId, content.toString(), reasoning.toString()) }
+        is StreamEvent.Delta -> { content.append(event.text); updateAssistant(assistantId, content.toString(), reasoning.toString(), toolsUsed) }
+        is StreamEvent.Reasoning -> { reasoning.append(event.text); updateAssistant(assistantId, content.toString(), reasoning.toString(), toolsUsed) }
         is StreamEvent.ToolCalls -> _status.value = toolStatusLabel(event.calls.firstOrNull()?.name ?: "")
         is StreamEvent.ToolResult -> _status.value = null
         is StreamEvent.Status -> _status.value = toolStatusLabel(event.label)
-        is StreamEvent.Error -> { content.append("\n⚠️ ${event.message}"); updateAssistant(assistantId, content.toString(), reasoning.toString()) }
+        is StreamEvent.Error -> { content.append("\n⚠️ ${event.message}"); updateAssistant(assistantId, content.toString(), reasoning.toString(), toolsUsed) }
         is StreamEvent.Done -> _status.value = null
       }
     }
@@ -118,8 +120,8 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  private fun updateAssistant(id: String, content: String, reasoning: String) {
-    _messages.value = _messages.value.map { if (it.id == id) it.copy(content = content, reasoning = reasoning) else it }
+  private fun updateAssistant(id: String, content: String, reasoning: String, tools: List<String> = emptyList()) {
+    _messages.value = _messages.value.map { if (it.id == id) it.copy(content = content, reasoning = reasoning, toolsUsed = tools) else it }
   }
 
   private fun buildApiMessages(): List<JSONObject> {
@@ -166,7 +168,7 @@ class ChatViewModel @Inject constructor(
 
   fun deleteConversation(id: String) { viewModelScope.launch { dao.deleteConversation(id); DirectoryManager.deleteConversation(id) } }
 
-  private fun MessageEntity.toDomain() = ChatMessage(id, conversationId, Role.valueOf(role.uppercase()), content, reasoning, imagePaths.split(",").filter { it.isNotBlank() }, emptyList(), timestamp, MessageStatus.SENT)
+  private fun MessageEntity.toDomain() = ChatMessage(id, conversationId, Role.valueOf(role.uppercase()), content, reasoning, emptyList(), imagePaths.split(",").filter { it.isNotBlank() }, emptyList(), timestamp, MessageStatus.SENT)
   private fun ChatMessage.toEntity() = MessageEntity(id, conversationId, role.name.lowercase(), content, reasoning, imagePaths.joinToString(","), timestamp, status.name.lowercase())
 
   companion object {
