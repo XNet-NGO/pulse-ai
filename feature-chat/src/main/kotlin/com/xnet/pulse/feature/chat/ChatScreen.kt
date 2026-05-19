@@ -98,7 +98,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   Column(
     Modifier
       .fillMaxSize()
-      .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
+      .statusBarsPadding()
+      .navigationBarsPadding()
       .imePadding()
   ) {
     // Top bar
@@ -191,6 +192,17 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
   Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
     Surface(shape = shape, color = bgColor, modifier = Modifier.widthIn(max = if (isUser) 300.dp else 10000.dp).fillMaxWidth(if (isUser) 0.8f else 0.95f)) {
       Column(Modifier.padding(12.dp)) {
+        // Render attached images
+        if (msg.imagePaths.isNotEmpty()) {
+          msg.imagePaths.filter { it.isNotBlank() }.forEach { path ->
+            coil.compose.AsyncImage(
+              model = path,
+              contentDescription = null,
+              modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(bottom = 8.dp),
+              contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            )
+          }
+        }
         if (msg.reasoning.isNotBlank()) {
           Text(msg.reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
           Spacer(Modifier.height(4.dp))
@@ -255,60 +267,80 @@ private fun StatusBar(label: String) {
 private fun StreamingText(content: String) {
   val codeBg = Color(0xFF1E1E1E)
   val inlineBg = Color(0xFF2D2D2D)
-  // No remember — content changes every frame during streaming
-  val annotated = buildAnnotatedString {
-    var i = 0
-    while (i < content.length) {
-      when {
-        content.startsWith("```", i) -> {
-          val end = content.indexOf("```", i + 3)
-          val block = if (end != -1) content.substring(i + 3, end) else content.substring(i + 3)
-          // Strip language tag on first line
-          val code = block.substringAfter('\n', block)
-          withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, background = codeBg)) { append(code) }
-          i = if (end != -1) end + 3 else content.length
+
+  // Extract and render inline images
+  val imgPattern = remember { Regex("""!\[([^\]]*)\]\(([^)]+)\)""") }
+  val images = imgPattern.findAll(content).toList()
+  val textContent = imgPattern.replace(content, "")
+
+  Column {
+    images.forEach { match ->
+      val url = match.groupValues[2]
+      coil.compose.AsyncImage(
+        model = url,
+        contentDescription = match.groupValues[1],
+        modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(vertical = 4.dp),
+        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+      )
+    }
+    if (textContent.isNotBlank()) {
+      val annotated = buildAnnotatedString {
+        var i = 0
+        while (i < textContent.length) {
+          when {
+            textContent.startsWith("```", i) -> {
+              val end = textContent.indexOf("```", i + 3)
+              val block = if (end != -1) textContent.substring(i + 3, end) else textContent.substring(i + 3)
+              val code = block.substringAfter('\n', block)
+              withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, background = codeBg)) { append(code) }
+              i = if (end != -1) end + 3 else textContent.length
+            }
+            textContent[i] == '`' -> {
+              val end = textContent.indexOf('`', i + 1)
+              if (end != -1) { withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = inlineBg)) { append(textContent.substring(i + 1, end)) }; i = end + 1 }
+              else { append('`'); i++ }
+            }
+            textContent.startsWith("**", i) -> {
+              val end = textContent.indexOf("**", i + 2)
+              if (end != -1) { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(textContent.substring(i + 2, end)) }; i = end + 2 }
+              else { append("**"); i += 2 }
+            }
+            textContent.startsWith("### ", i) -> { i += 4 }
+            textContent.startsWith("## ", i) -> { i += 3 }
+            textContent.startsWith("# ", i) -> { i += 2 }
+            textContent.startsWith("- ", i) -> { append("• "); i += 2 }
+            else -> { append(textContent[i]); i++ }
+          }
         }
-        content[i] == '`' -> {
-          val end = content.indexOf('`', i + 1)
-          if (end != -1) { withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = inlineBg)) { append(content.substring(i + 1, end)) }; i = end + 1 }
-          else { append('`'); i++ }
-        }
-        content.startsWith("**", i) -> {
-          val end = content.indexOf("**", i + 2)
-          if (end != -1) { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(content.substring(i + 2, end)) }; i = end + 2 }
-          else { append("**"); i += 2 }
-        }
-        content.startsWith("### ", i) -> { i += 4 } // skip heading markers
-        content.startsWith("## ", i) -> { i += 3 }
-        content.startsWith("# ", i) -> { i += 2 }
-        content.startsWith("- ", i) -> { append("• "); i += 2 }
-        else -> { append(content[i]); i++ }
       }
+      Text(annotated, style = MaterialTheme.typography.bodyMedium)
     }
   }
-  Text(annotated, style = MaterialTheme.typography.bodyMedium)
 }
 
 @Composable
 private fun SettingsSheet() {
+  var darkMode by remember { mutableStateOf(true) }
+  var autoRead by remember { mutableStateOf(false) }
+  var showThinking by remember { mutableStateOf(true) }
+
   Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     Text("Settings", style = MaterialTheme.typography.titleLarge)
     HorizontalDivider()
-    // Model selection
-    Text("Model", style = MaterialTheme.typography.titleSmall)
-    Text("openai (via Pollinations)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+      Text("Dark mode", Modifier.weight(1f))
+      Switch(checked = darkMode, onCheckedChange = { darkMode = it })
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+      Text("Auto-read responses", Modifier.weight(1f))
+      Switch(checked = autoRead, onCheckedChange = { autoRead = it })
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+      Text("Show thinking", Modifier.weight(1f))
+      Switch(checked = showThinking, onCheckedChange = { showThinking = it })
+    }
     HorizontalDivider()
-    // Theme
-    Text("Theme", style = MaterialTheme.typography.titleSmall)
-    Text("Dark (default)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    HorizontalDivider()
-    // Voice
-    Text("Voice", style = MaterialTheme.typography.titleSmall)
-    Text("Auto-read responses: Off", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    HorizontalDivider()
-    // About
-    Text("About", style = MaterialTheme.typography.titleSmall)
-    Text("AIO Pulse v1.0.0\nBy XNet NGO", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("AIO Pulse v1.0.0\nBy XNet NGO", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(16.dp))
   }
 }
