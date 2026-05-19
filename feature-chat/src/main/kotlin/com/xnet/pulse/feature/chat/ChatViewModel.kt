@@ -160,7 +160,6 @@ class ChatViewModel @Inject constructor(
     "read_file", "write_file", "list_directory" -> "Working..."
     "get_location" -> "Locating..."
     "image_generate" -> "Creating image..."
-    "analyze_image" -> "Looking at this..."
     "memory_store", "memory_recall" -> "Remembering..."
     else -> "Working..."
   }

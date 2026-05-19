@@ -28,19 +28,51 @@ class AttachmentProcessor @Inject constructor(@ApplicationContext private val ct
 
   private fun processImage(uri: Uri, name: String): Attachment? {
     val input = ctx.contentResolver.openInputStream(uri) ?: return null
-    val bitmap = BitmapFactory.decodeStream(input) ?: return null
+    val bytes = input.readBytes()
     input.close()
-    val scaled = scaleBitmap(bitmap, 1024)
+    // Use full normalization pipeline (SVG rasterize, resize, JPEG convert)
+    val normalized = normalizeForVision(bytes, name)
     // Save to app files for stable rendering
     val file = java.io.File(ctx.filesDir, "images/${System.currentTimeMillis()}_$name.jpg")
     file.parentFile?.mkdirs()
-    file.outputStream().use { scaled.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+    file.writeBytes(normalized)
     val filePath = "file://${file.absolutePath}"
-    // Also produce base64 for API
-    val baos = ByteArrayOutputStream()
-    scaled.compress(Bitmap.CompressFormat.JPEG, 85, baos)
-    val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+    val b64 = Base64.encodeToString(normalized, Base64.NO_WRAP)
     return Attachment("image", "data:image/jpeg;base64,$b64", name, filePath)
+  }
+
+  fun normalizeForVision(data: ByteArray, url: String): ByteArray {
+    val isSvg = url.lowercase().endsWith(".svg") ||
+      (data.isNotEmpty() && (data[0] == '<'.code.toByte() || (data.size > 3 && data[0] == 0xEF.toByte() && data[1] == 0xBB.toByte())))
+    if (isSvg) {
+      try {
+        val svg = com.caverock.androidsvg.SVG.getFromInputStream(data.inputStream())
+        val w = svg.documentWidth.takeIf { it > 0 } ?: 1024f
+        val h = svg.documentHeight.takeIf { it > 0 } ?: 1024f
+        val scale = 1024f / maxOf(w, h)
+        val bw = (w * scale).toInt()
+        val bh = (h * scale).toInt()
+        val bmp = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        svg.documentWidth = bw.toFloat()
+        svg.documentHeight = bh.toFloat()
+        svg.renderToCanvas(canvas)
+        return bitmapToJpeg(bmp)
+      } catch (_: Exception) {}
+    }
+    val bmp = BitmapFactory.decodeByteArray(data, 0, data.size) ?: return data
+    val scaled = scaleBitmap(bmp, 1024)
+    val result = bitmapToJpeg(scaled)
+    if (scaled !== bmp) bmp.recycle()
+    return result
+  }
+
+  private fun bitmapToJpeg(bmp: android.graphics.Bitmap): ByteArray {
+    val out = ByteArrayOutputStream()
+    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+    bmp.recycle()
+    return out.toByteArray()
   }
 
   private fun processText(uri: Uri, name: String): Attachment? {

@@ -39,7 +39,6 @@ class ToolExecutor @Inject constructor(
     ToolDef("write_file", "Write content to a file.", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""", false),
     ToolDef("get_location", "Get device GPS location.", """{"type":"object","properties":{}}""", true),
     ToolDef("open_intent", "Open a URL, map, or app.", """{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}""", false),
-    ToolDef("analyze_image", "Analyze an image using vision.", """{"type":"object","properties":{"url":{"type":"string"},"question":{"type":"string"}},"required":["url"]}""", true),
     ToolDef("image_generate", "Generate an image from a text prompt.", """{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"]}""", true),
     ToolDef("memory_store", "Remember a fact across conversations.", """{"type":"object","properties":{"key":{"type":"string"},"content":{"type":"string"},"category":{"type":"string"}},"required":["key","content"]}""", true),
     ToolDef("memory_recall", "Search memory. Empty query lists all.", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""", true),
@@ -54,7 +53,6 @@ class ToolExecutor @Inject constructor(
     "write_file" -> writeFile(args["path"]?.toString() ?: "", args["content"]?.toString() ?: "")
     "get_location" -> getLocation()
     "open_intent" -> openIntent(args["uri"]?.toString() ?: "")
-    "analyze_image" -> analyzeImage(args["url"]?.toString() ?: "", args["question"]?.toString())
     "image_generate" -> imageGenerate(args["prompt"]?.toString() ?: "")
     "memory_store" -> memoryStore(args["key"]?.toString() ?: "", args["content"]?.toString() ?: "", args["category"]?.toString() ?: "general")
     "memory_recall" -> memoryRecall(args["query"]?.toString() ?: "")
@@ -133,29 +131,7 @@ class ToolExecutor @Inject constructor(
       "Opened: $uri"
     } catch (e: Exception) { "Failed to open: ${e.message}" }
   }
-  private suspend fun analyzeImage(url: String, question: String?): String = withContext(Dispatchers.IO) {
-    try {
-      val imgData = fetchImageBytes(url)
-      val normalized = normalizeForVision(imgData, url)
-      val b64 = android.util.Base64.encodeToString(normalized, android.util.Base64.NO_WRAP)
-      val dataUri = "data:image/jpeg;base64,$b64"
-      val msgs = listOf(
-        JSONObject().put("role", "user").put("content", JSONArray().apply {
-          put(JSONObject().put("type", "text").put("text", question ?: "Describe this image in detail."))
-          put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", dataUri)))
-        })
-      )
-      val sb = StringBuilder()
-      pollinationsClient.stream(msgs, "openai").collect { ev ->
-        if (ev is com.xnet.pulse.core.model.StreamEvent.Delta) sb.append(ev.text)
-      }
-      sb.toString().ifBlank { "Could not analyze image" }
-    } catch (e: Exception) {
-      "Image analysis failed: ${e.message}"
-    }
-  }
-
-  private fun fetchImageBytes(url: String): ByteArray {
+  fun fetchImageBytes(url: String): ByteArray {
     if (url.startsWith("file://")) return java.io.File(url.removePrefix("file://")).readBytes()
     if (url.startsWith("/")) return java.io.File(url).readBytes()
     val req = Request.Builder().url(url)
@@ -165,44 +141,6 @@ class ToolExecutor @Inject constructor(
     val resp = http.newCall(req).execute()
     if (resp.code != 200) throw Exception("HTTP ${resp.code} from $url")
     return resp.body?.bytes() ?: throw Exception("Empty response")
-  }
-
-  private fun normalizeForVision(data: ByteArray, url: String): ByteArray {
-    // SVG detection
-    val isSvg = url.lowercase().endsWith(".svg") ||
-      (data.isNotEmpty() && (data[0] == '<'.code.toByte() || (data.size > 3 && data[0] == 0xEF.toByte() && data[1] == 0xBB.toByte())))
-    if (isSvg) {
-      try {
-        val svg = com.caverock.androidsvg.SVG.getFromInputStream(data.inputStream())
-        val w = svg.documentWidth.takeIf { it > 0 } ?: 1024f
-        val h = svg.documentHeight.takeIf { it > 0 } ?: 1024f
-        val scale = 1024f / maxOf(w, h)
-        val bw = (w * scale).toInt()
-        val bh = (h * scale).toInt()
-        val bmp = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bmp)
-        canvas.drawColor(android.graphics.Color.WHITE)
-        svg.documentWidth = bw.toFloat()
-        svg.documentHeight = bh.toFloat()
-        svg.renderToCanvas(canvas)
-        return bitmapToJpeg(bmp)
-      } catch (_: Exception) {}
-    }
-    // Decode any format Android supports
-    val bmp = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.size) ?: return data
-    val maxDim = 1024
-    val s = if (bmp.width > maxDim || bmp.height > maxDim) maxDim.toFloat() / maxOf(bmp.width, bmp.height) else 1f
-    val scaled = if (s < 1f) android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * s).toInt(), (bmp.height * s).toInt(), true) else bmp
-    val result = bitmapToJpeg(scaled)
-    if (scaled !== bmp) bmp.recycle()
-    return result
-  }
-
-  private fun bitmapToJpeg(bmp: android.graphics.Bitmap): ByteArray {
-    val out = java.io.ByteArrayOutputStream()
-    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
-    bmp.recycle()
-    return out.toByteArray()
   }
 
   private suspend fun imageGenerate(prompt: String): String {
