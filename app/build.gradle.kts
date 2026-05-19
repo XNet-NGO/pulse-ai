@@ -51,6 +51,9 @@ dependencies {
   implementation("com.atlassian.commonmark:commonmark:0.15.2")
   implementation("com.atlassian.commonmark:commonmark-ext-gfm-tables:0.15.2")
   implementation("com.atlassian.commonmark:commonmark-ext-autolink:0.15.2")
+  implementation("ru.noties:jlatexmath-android:0.2.0")
+  implementation("ru.noties:jlatexmath-android-font-cyrillic:0.2.0")
+  implementation("ru.noties:jlatexmath-android-font-greek:0.2.0")
   implementation(libs.androidx.appcompat)
 
   val bom = platform(libs.androidx.compose.bom)
