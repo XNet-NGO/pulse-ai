@@ -11,7 +11,7 @@ object ThemeManager {
 
   fun get(ctx: Context): ThemeMode {
     val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    return try { ThemeMode.valueOf(prefs.getString(KEY, "SYSTEM") ?: "SYSTEM") } catch (_: Exception) { ThemeMode.SYSTEM }
+    return try { ThemeMode.valueOf(prefs.getString(KEY, "DARK") ?: "DARK") } catch (_: Exception) { ThemeMode.DARK }
   }
 
   fun set(ctx: Context, mode: ThemeMode) {
