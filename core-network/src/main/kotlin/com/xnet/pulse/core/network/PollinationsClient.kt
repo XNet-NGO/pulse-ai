@@ -94,6 +94,7 @@ class PollinationsClient @Inject constructor() {
     val body = JSONObject().apply {
       put("model", model)
       put("stream", true)
+      put("reasoning_effort", "high")
       put("messages", JSONArray(messages))
       if (tools.isNotEmpty()) put("tools", JSONArray(tools))
     }.toString()

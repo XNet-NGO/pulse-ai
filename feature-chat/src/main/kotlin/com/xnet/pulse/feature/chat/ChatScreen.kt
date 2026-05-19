@@ -265,7 +265,7 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           }
         }
         if (showThinking && msg.reasoning.isNotBlank()) {
-          var expanded by remember { mutableStateOf(false) }
+          var expanded by remember { mutableStateOf(msg.status == MessageStatus.STREAMING) }
           Surface(
             shape = RoundedCornerShape(8.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -285,7 +285,7 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
             }
           }
         }
-        val content = msg.content.ifBlank { if (msg.status == MessageStatus.STREAMING) "..." else "" }
+        val content = msg.content.ifBlank { if (msg.status == MessageStatus.STREAMING && msg.reasoning.isBlank()) "..." else "" }
         if (msg.toolsUsed.isNotEmpty()) {
           Row(Modifier.padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             msg.toolsUsed.forEach { tool ->
