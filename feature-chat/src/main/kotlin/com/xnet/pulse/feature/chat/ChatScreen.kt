@@ -320,17 +320,24 @@ private fun StreamingText(content: String) {
 
 @Composable
 private fun SettingsSheet() {
-  var darkMode by remember { mutableStateOf(true) }
+  var themeMode by remember { mutableStateOf("system") }
   var autoRead by remember { mutableStateOf(false) }
   var showThinking by remember { mutableStateOf(true) }
 
   Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     Text("Settings", style = MaterialTheme.typography.titleLarge)
     HorizontalDivider()
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-      Text("Dark mode", Modifier.weight(1f))
-      Switch(checked = darkMode, onCheckedChange = { darkMode = it })
+    Text("Theme", style = MaterialTheme.typography.titleSmall)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      listOf("light", "dark", "system", "custom").forEach { mode ->
+        FilterChip(
+          selected = themeMode == mode,
+          onClick = { themeMode = mode },
+          label = { Text(mode.replaceFirstChar { it.uppercase() }) },
+        )
+      }
     }
+    HorizontalDivider()
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       Text("Auto-read responses", Modifier.weight(1f))
       Switch(checked = autoRead, onCheckedChange = { autoRead = it })
