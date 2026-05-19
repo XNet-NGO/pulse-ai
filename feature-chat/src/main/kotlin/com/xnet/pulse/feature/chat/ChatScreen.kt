@@ -284,14 +284,32 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
 
             parts.forEach { (text, url) ->
               if (url != null) {
-                // Image
+                // Image - load manually since Coil isn't working
                 val resolved = if (url.startsWith("/")) "file://${LocalContext.current.filesDir}/pulse$url" else url
-                coil.compose.AsyncImage(
-                  model = coil.request.ImageRequest.Builder(LocalContext.current).data(resolved).crossfade(true).build(),
-                  contentDescription = text,
-                  modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
-                  contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
-                )
+                val bmp = remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+                LaunchedEffect(resolved) {
+                  bmp.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                      if (resolved.startsWith("file://")) {
+                        android.graphics.BitmapFactory.decodeFile(resolved.removePrefix("file://"))
+                      } else {
+                        val client = okhttp3.OkHttpClient.Builder().followRedirects(true).followSslRedirects(true)
+                          .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                          .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS).build()
+                        val resp = client.newCall(okhttp3.Request.Builder().url(resolved).build()).execute()
+                        resp.use { it.body?.byteStream()?.use { s -> android.graphics.BitmapFactory.decodeStream(s) } }
+                      }
+                    } catch (_: Exception) { null }
+                  }
+                }
+                if (bmp.value != null) {
+                  Image(
+                    bitmap = bmp.value!!.asImageBitmap(),
+                    contentDescription = text,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                  )
+                }
               } else {
                 // Text/markdown
                 val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
