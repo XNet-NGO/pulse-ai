@@ -89,7 +89,16 @@ class ChatViewModel @Inject constructor(
 
     orchestrator.run(apiMessages, model, tools) { name, args ->
       _status.value = toolStatusLabel(name)
-      toolExecutor.execute(name, args)
+      val result = toolExecutor.execute(name, args)
+      // If tool returned an image, append to content
+      if (name == "image_generate" || name == "search_images") {
+        val imgRegex = Regex("""!\[([^\]]*)\]\(([^)]+)\)""")
+        imgRegex.findAll(result).forEach { match ->
+          content.append("\n${match.value}")
+          updateAssistant(assistantId, content.toString(), reasoning.toString())
+        }
+      }
+      result
     }.collect { event ->
       when (event) {
         is StreamEvent.Delta -> { content.append(event.text); updateAssistant(assistantId, content.toString(), reasoning.toString()) }
