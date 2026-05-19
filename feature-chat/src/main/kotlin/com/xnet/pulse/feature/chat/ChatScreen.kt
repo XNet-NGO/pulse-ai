@@ -57,6 +57,9 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   var showDrawer by remember { mutableStateOf(false) }
   var showSettings by remember { mutableStateOf(false) }
   var showLibrary by remember { mutableStateOf(false) }
+  val ctx = LocalContext.current
+  val prefs = remember { com.xnet.pulse.feature.chat.theme.ThemePrefs(ctx) }
+  val showThinking by prefs.showThinking.collectAsState(initial = true)
   var reportMessageId by remember { mutableStateOf<String?>(null) }
 
   LaunchedEffect(messages.size) {
@@ -128,7 +131,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
       contentPadding = PaddingValues(vertical = 8.dp),
     ) {
       items(messages, key = { it.id }) { msg ->
-        MessageBubble(msg, onReport = if (msg.role == Role.ASSISTANT) {{ reportMessageId = msg.id }} else null)
+        MessageBubble(msg, onReport = if (msg.role == Role.ASSISTANT) {{ reportMessageId = msg.id }} else null, showThinking = showThinking)
       }
     }
 
@@ -215,7 +218,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: (() -> Unit)? = null) {
+private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: (() -> Unit)? = null, showThinking: Boolean = true) {
   val isUser = msg.role == Role.USER
   val alignment = if (isUser) Alignment.End else Alignment.Start
   val bgColor = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
@@ -261,7 +264,7 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
             }
           }
         }
-        if (msg.reasoning.isNotBlank()) {
+        if (showThinking && msg.reasoning.isNotBlank()) {
           Text(msg.reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
           Spacer(Modifier.height(4.dp))
         }

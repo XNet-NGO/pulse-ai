@@ -25,7 +25,7 @@ class Orchestrator @Inject constructor(
     private const val TRIM_LEN = 500
     private val PARALLEL_SAFE = setOf(
       "read_file", "list_directory", "fetch_url", "search_web", "search_images",
-      "memory_recall", "memory_store", "get_location", "analyze_image", "image_generate",
+      "memory_recall", "memory_store", "get_location", "image_generate",
     )
   }
 
@@ -74,7 +74,8 @@ class Orchestrator @Inject constructor(
         })
       })
 
-      // Execute tools
+      // Execute tools — emit status so UI updates before blocking on execution
+      emit(StreamEvent.Status(tcEvent.calls.firstOrNull()?.name ?: ""))
       val results = executeCalls(tcEvent.calls, executor)
       for (r in results) {
         emit(StreamEvent.ToolResult(r))

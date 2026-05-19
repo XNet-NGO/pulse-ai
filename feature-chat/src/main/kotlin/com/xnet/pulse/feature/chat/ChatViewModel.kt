@@ -103,7 +103,7 @@ class ChatViewModel @Inject constructor(
         is StreamEvent.Reasoning -> { reasoning.append(event.text); updateAssistant(assistantId, content.toString(), reasoning.toString()) }
         is StreamEvent.ToolCalls -> _status.value = toolStatusLabel(event.calls.firstOrNull()?.name ?: "")
         is StreamEvent.ToolResult -> _status.value = null
-        is StreamEvent.Status -> _status.value = event.label
+        is StreamEvent.Status -> _status.value = toolStatusLabel(event.label)
         is StreamEvent.Error -> { content.append("\n⚠️ ${event.message}"); updateAssistant(assistantId, content.toString(), reasoning.toString()) }
         is StreamEvent.Done -> _status.value = null
       }
