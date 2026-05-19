@@ -267,21 +267,18 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           msg.status == MessageStatus.STREAMING -> StreamingText(content)
           else -> {
             // Split content into text segments and images, render interleaved
-            val imgPattern = remember { Regex("""!\[([^\]]*)\]\(([^)]+)\)""") }
-            val parts = remember(content) {
-              val result = mutableListOf<Pair<String, String?>>() // text to null, or alt to url
+            val imgPattern = Regex("""!\[([^\]]*)\]\(([^)]+)\)""")
+            val parts = buildList {
               var lastEnd = 0
               imgPattern.findAll(content).forEach { match ->
                 val before = content.substring(lastEnd, match.range.first)
-                if (before.isNotBlank()) result.add(before to null)
-                result.add(match.groupValues[1] to match.groupValues[2])
+                if (before.isNotBlank()) add(before to null)
+                add(match.groupValues[1] to match.groupValues[2])
                 lastEnd = match.range.last + 1
               }
               val remaining = content.substring(lastEnd)
-              if (remaining.isNotBlank()) result.add(remaining to null)
-              result.toList()
+              if (remaining.isNotBlank()) add(remaining to null)
             }
-
             parts.forEach { (text, url) ->
               if (url != null) {
                 // Image - load manually since Coil isn't working
