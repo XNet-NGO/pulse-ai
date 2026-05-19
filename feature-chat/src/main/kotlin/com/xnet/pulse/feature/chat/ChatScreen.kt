@@ -51,6 +51,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   val listState = rememberLazyListState()
   val scope = rememberCoroutineScope()
   var showDrawer by remember { mutableStateOf(false) }
+  var showSettings by remember { mutableStateOf(false) }
   var reportMessageId by remember { mutableStateOf<String?>(null) }
 
   LaunchedEffect(messages.size) {
@@ -72,6 +73,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
       Column(Modifier.padding(16.dp)) {
         TextButton(onClick = { viewModel.newConversation(); showDrawer = false }) { Text("+ New Chat") }
         TextButton(onClick = { showDrawer = false }) { Text("📁 Library") }
+        TextButton(onClick = { showDrawer = false; showSettings = true }) { Text("⚙️ Settings") }
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         conversations.forEach { conv ->
           ListItem(
@@ -83,6 +85,13 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
           )
         }
       }
+    }
+  }
+
+  // Settings
+  if (showSettings) {
+    ModalBottomSheet(onDismissRequest = { showSettings = false }) {
+      SettingsSheet()
     }
   }
 
@@ -278,4 +287,28 @@ private fun StreamingText(content: String) {
     }
   }
   Text(annotated, style = MaterialTheme.typography.bodyMedium)
+}
+
+@Composable
+private fun SettingsSheet() {
+  Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Text("Settings", style = MaterialTheme.typography.titleLarge)
+    HorizontalDivider()
+    // Model selection
+    Text("Model", style = MaterialTheme.typography.titleSmall)
+    Text("openai (via Pollinations)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    HorizontalDivider()
+    // Theme
+    Text("Theme", style = MaterialTheme.typography.titleSmall)
+    Text("Dark (default)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    HorizontalDivider()
+    // Voice
+    Text("Voice", style = MaterialTheme.typography.titleSmall)
+    Text("Auto-read responses: Off", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    HorizontalDivider()
+    // About
+    Text("About", style = MaterialTheme.typography.titleSmall)
+    Text("AIO Pulse v1.0.0\nBy XNet NGO", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(16.dp))
+  }
 }
