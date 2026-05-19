@@ -7,25 +7,29 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import coil.compose.rememberAsyncImagePainter
 
 @Composable
-fun ChatBackground(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-  val theme = LocalThemeState.current
-  Box(modifier.fillMaxSize()) {
-    if (theme.useBackground && theme.backgroundUri != null) {
-      when (theme.backgroundMediaType) {
-        "image" -> Image(
-          painter = rememberAsyncImagePainter(Uri.parse(theme.backgroundUri)),
-          contentDescription = null,
-          modifier = Modifier.fillMaxSize().alpha(theme.backgroundOpacity),
-          contentScale = ContentScale.Crop,
-        )
-        "video" -> { /* VideoBackground handled separately with ExoPlayer if needed */ }
-      }
+fun ChatBackground(theme: ThemeState, modifier: Modifier = Modifier) {
+  if (!theme.useBackground || theme.backgroundUri.isNullOrBlank()) return
+
+  val rotMod = Modifier.fillMaxSize().graphicsLayer {
+    rotationZ = theme.videoRotation.toFloat()
+    if (theme.videoRotation == 90 || theme.videoRotation == 270) {
+      val scale = maxOf(size.width / size.height, size.height / size.width)
+      scaleX = scale
+      scaleY = scale
     }
-    content()
+  }
+
+  Box(modifier.fillMaxSize()) {
+    Image(
+      painter = rememberAsyncImagePainter(Uri.parse(theme.backgroundUri)),
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      modifier = rotMod.alpha(theme.backgroundOpacity),
+    )
   }
 }

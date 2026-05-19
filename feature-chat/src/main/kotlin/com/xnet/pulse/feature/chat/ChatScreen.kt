@@ -38,15 +38,13 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.xnet.pulse.core.model.MessageStatus
 import com.xnet.pulse.core.model.Role
-import com.xnet.pulse.core.designsystem.LocalThemeMode
-import com.xnet.pulse.core.designsystem.ThemeMode
 import com.xnet.pulse.feature.chat.engine.AttachmentProcessor
 import com.xnet.pulse.feature.chat.engine.VoiceManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onThemeChange: (ThemeMode) -> Unit = {}) {
+fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   val messages by viewModel.messages.collectAsState()
   val status by viewModel.status.collectAsState()
   val isStreaming by viewModel.isStreaming.collectAsState()
@@ -94,7 +92,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onThemeChange: (Theme
   // Settings
   if (showSettings) {
     ModalBottomSheet(onDismissRequest = { showSettings = false }) {
-      SettingsSheet(onThemeChange = onThemeChange)
+      SettingsSheet()
     }
   }
 
@@ -329,22 +327,24 @@ private fun StreamingText(content: String) {
 }
 
 @Composable
-private fun SettingsSheet(onThemeChange: (ThemeMode) -> Unit = {}) {
-  val currentTheme = LocalThemeMode.current
-  var themeMode by remember { mutableStateOf(currentTheme) }
+private fun SettingsSheet() {
+  val ctx = LocalContext.current
+  val prefs = remember { com.xnet.pulse.feature.chat.theme.ThemePrefs(ctx) }
+  val scope = rememberCoroutineScope()
+  val themeMode by prefs.themeMode.collectAsState(initial = "dark")
   var autoRead by remember { mutableStateOf(false) }
-  var showThinking by remember { mutableStateOf(true) }
+  val showThinking by prefs.showThinking.collectAsState(initial = true)
 
   Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     Text("Settings", style = MaterialTheme.typography.titleLarge)
     HorizontalDivider()
     Text("Theme", style = MaterialTheme.typography.titleSmall)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      ThemeMode.entries.forEach { mode ->
+      listOf("light", "dark", "system", "custom").forEach { mode ->
         FilterChip(
           selected = themeMode == mode,
-          onClick = { themeMode = mode; onThemeChange(mode) },
-          label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) },
+          onClick = { scope.launch { prefs.set(com.xnet.pulse.feature.chat.theme.ThemePrefs.THEME_MODE, mode) } },
+          label = { Text(mode.replaceFirstChar { it.uppercase() }) },
         )
       }
     }
@@ -355,7 +355,7 @@ private fun SettingsSheet(onThemeChange: (ThemeMode) -> Unit = {}) {
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       Text("Show thinking", Modifier.weight(1f))
-      Switch(checked = showThinking, onCheckedChange = { showThinking = it })
+      Switch(checked = showThinking, onCheckedChange = { scope.launch { prefs.set(com.xnet.pulse.feature.chat.theme.ThemePrefs.SHOW_THINKING, it) } })
     }
     HorizontalDivider()
     Text("AIO Pulse v1.0.0\nBy XNet NGO", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

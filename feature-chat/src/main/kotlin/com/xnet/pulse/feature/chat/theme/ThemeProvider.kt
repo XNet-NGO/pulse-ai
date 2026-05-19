@@ -1,14 +1,26 @@
 package com.xnet.pulse.feature.chat.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 data class ThemeState(
   val mode: String = "dark",
   val isDark: Boolean = true,
+  val primaryColor: Color? = null,
+  val secondaryColor: Color? = null,
+  val useCustomColors: Boolean = false,
   val useBackground: Boolean = false,
   val backgroundUri: String? = null,
   val backgroundMediaType: String = "image",
@@ -24,48 +36,86 @@ data class ThemeState(
   val userBubbleOpacity: Float = 1f,
   val aiBubbleOpacity: Float = 1f,
   val showThinking: Boolean = true,
+  val showStatusTags: Boolean = true,
+  val showToolActivity: Boolean = true,
   val uiOpacity: Float = 1f,
+  val uiColor: Color? = null,
+  val useUiColor: Boolean = false,
+  val primaryTextColor: Color? = null,
+  val secondaryTextColor: Color? = null,
+  val useCustomText: Boolean = false,
 )
 
 val LocalThemeState = compositionLocalOf { ThemeState() }
 
 @Composable
-fun PulseThemeProvider(content: @Composable () -> Unit) {
+fun ThemeProvider(content: @Composable () -> Unit) {
   val ctx = LocalContext.current
   val prefs = remember { ThemePrefs(ctx) }
 
   val mode = prefs.themeMode.collectAsState(initial = "dark").value
   val sysDark = isSystemInDarkTheme()
-  val isDark = when (mode) { "light" -> false; "dark" -> true; else -> sysDark }
+  val isDark = when (mode) {
+    "light" -> false
+
+    "dark" -> true
+
+    "custom" -> true
+
+    // custom defaults to dark base
+    else -> sysDark
+  }
+  val isCustom = mode == "custom"
 
   val useCustomColors = prefs.useCustomColors.collectAsState(initial = false).value
   val primaryColor = prefs.primaryColor.collectAsState(initial = null).value?.let { Color(it) }
   val secondaryColor = prefs.secondaryColor.collectAsState(initial = null).value?.let { Color(it) }
 
-  val baseScheme = if (isDark) darkColorScheme(
-    primary = Color(0xFF00E5FF), secondary = Color(0xFFFFB300),
-    background = Color.Black, surface = Color(0xFF0A0A0A), surfaceVariant = Color(0xFF1A1A1A),
-    primaryContainer = Color(0xFF003D4D), onPrimary = Color.Black,
-    onSurface = Color(0xFFE0E0E0), onSurfaceVariant = Color(0xFFB0B0B0),
-  ) else lightColorScheme(primary = Color(0xFF00ACC1), secondary = Color(0xFFFFA000))
-
-  val colorScheme = if (useCustomColors && primaryColor != null) baseScheme.copy(
-    primary = primaryColor, secondary = secondaryColor ?: primaryColor,
-    primaryContainer = primaryColor.copy(alpha = 0.3f),
-  ) else baseScheme
+  val colorScheme: ColorScheme = if (isCustom && useCustomColors && primaryColor != null) {
+    val base = if (isDark) darkColorScheme() else lightColorScheme()
+    base.copy(
+      primary = primaryColor,
+      secondary = secondaryColor ?: primaryColor,
+      primaryContainer = primaryColor.copy(alpha = 0.3f),
+      secondaryContainer = (secondaryColor ?: primaryColor).copy(alpha = 0.3f),
+    )
+  } else if (android.os.Build.VERSION.SDK_INT >= 31 && mode == "system") {
+    if (isDark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+  } else if (isDark) {
+    darkColorScheme()
+  } else {
+    lightColorScheme()
+  }
 
   val useUiColor = prefs.useUiColor.collectAsState(initial = false).value
   val uiColor = prefs.uiColor.collectAsState(initial = null).value?.let { Color(it) }
   val useCustomText = prefs.useCustomText.collectAsState(initial = false).value
-  val pText = prefs.primaryTextColor.collectAsState(initial = null).value?.let { Color(it) }
-  val sText = prefs.secondaryTextColor.collectAsState(initial = null).value?.let { Color(it) }
-
+  val pTextColor = prefs.primaryTextColor.collectAsState(initial = null).value?.let { Color(it) }
+  val sTextColor = prefs.secondaryTextColor.collectAsState(initial = null).value?.let { Color(it) }
   var finalScheme = colorScheme
-  if (useUiColor && uiColor != null) finalScheme = finalScheme.copy(surface = uiColor, background = uiColor, surfaceVariant = uiColor.copy(alpha = 0.7f))
-  if (useCustomText && pText != null) finalScheme = finalScheme.copy(onSurface = pText, onBackground = pText, onSurfaceVariant = sText ?: pText.copy(alpha = 0.7f))
+  if (isCustom && useUiColor && uiColor != null) {
+    finalScheme = finalScheme.copy(
+      surface = uiColor,
+      background = uiColor,
+      surfaceVariant = uiColor.copy(alpha = 0.7f),
+      surfaceContainer = uiColor,
+      surfaceContainerHigh = uiColor,
+      surfaceContainerLow = uiColor,
+    )
+  }
+  if (isCustom && useCustomText) {
+    val primary = pTextColor ?: finalScheme.onSurface
+    val secondary = sTextColor ?: primary.copy(alpha = 0.7f)
+    finalScheme = finalScheme.copy(
+      onSurface = primary,
+      onBackground = primary,
+      onSurfaceVariant = secondary,
+    )
+  }
 
   val state = ThemeState(
     mode = mode, isDark = isDark,
+    primaryColor = primaryColor, secondaryColor = secondaryColor, useCustomColors = useCustomColors,
     useBackground = prefs.useBackground.collectAsState(initial = false).value,
     backgroundUri = prefs.backgroundUri.collectAsState(initial = null).value,
     backgroundMediaType = prefs.backgroundMediaType.collectAsState(initial = "image").value,
@@ -77,11 +127,18 @@ fun PulseThemeProvider(content: @Composable () -> Unit) {
     aiBubbleColor = prefs.aiBubbleColor.collectAsState(initial = null).value?.let { Color(it) },
     userTextColor = prefs.userTextColor.collectAsState(initial = null).value?.let { Color(it) },
     aiTextColor = prefs.aiTextColor.collectAsState(initial = null).value?.let { Color(it) },
-    useCustomBubbles = prefs.useCustomBubbles.collectAsState(initial = false).value,
+    useCustomBubbles = isCustom && prefs.useCustomBubbles.collectAsState(initial = false).value,
     userBubbleOpacity = prefs.userBubbleOpacity.collectAsState(initial = 1f).value,
     aiBubbleOpacity = prefs.aiBubbleOpacity.collectAsState(initial = 1f).value,
     showThinking = prefs.showThinking.collectAsState(initial = true).value,
+    showStatusTags = prefs.showStatusTags.collectAsState(initial = true).value,
+    showToolActivity = prefs.showToolActivity.collectAsState(initial = true).value,
     uiOpacity = prefs.uiOpacity.collectAsState(initial = 1f).value,
+    uiColor = prefs.uiColor.collectAsState(initial = null).value?.let { Color(it) },
+    useUiColor = prefs.useUiColor.collectAsState(initial = false).value,
+    primaryTextColor = prefs.primaryTextColor.collectAsState(initial = null).value?.let { Color(it) },
+    secondaryTextColor = prefs.secondaryTextColor.collectAsState(initial = null).value?.let { Color(it) },
+    useCustomText = prefs.useCustomText.collectAsState(initial = false).value,
   )
 
   CompositionLocalProvider(LocalThemeState provides state) {
