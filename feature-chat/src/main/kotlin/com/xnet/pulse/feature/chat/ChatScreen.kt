@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -100,6 +101,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onThemeChange: (Theme
   Column(
     Modifier
       .fillMaxSize()
+      .background(MaterialTheme.colorScheme.background)
       .statusBarsPadding()
       .navigationBarsPadding()
       .imePadding()
