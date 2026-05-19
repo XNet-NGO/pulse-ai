@@ -201,8 +201,9 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
         // Render attached images
         if (msg.imagePaths.isNotEmpty()) {
           msg.imagePaths.filter { it.isNotBlank() }.forEach { path ->
+            val model = remember(path.hashCode()) { path }
             coil.compose.AsyncImage(
-              model = path,
+              model = model,
               contentDescription = null,
               modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(bottom = 8.dp),
               contentScale = androidx.compose.ui.layout.ContentScale.Fit,
@@ -282,8 +283,9 @@ private fun StreamingText(content: String) {
   Column {
     images.forEach { match ->
       val url = match.groupValues[2]
+      val model = remember(url.hashCode()) { url }
       coil.compose.AsyncImage(
-        model = url,
+        model = model,
         contentDescription = match.groupValues[1],
         modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(vertical = 4.dp),
         contentScale = androidx.compose.ui.layout.ContentScale.Fit,

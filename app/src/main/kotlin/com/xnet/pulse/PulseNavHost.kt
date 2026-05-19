@@ -18,9 +18,11 @@ fun PulseNavHost() {
     ThemeMode.LIGHT -> false
     ThemeMode.SYSTEM -> isSystemInDarkTheme()
   }
+  // Use dynamic (Material You) colors only in SYSTEM mode
+  val useDynamic = themeMode == ThemeMode.SYSTEM
 
   CompositionLocalProvider(LocalThemeMode provides themeMode) {
-    PulseTheme(darkTheme = isDark) {
+    PulseTheme(darkTheme = isDark, dynamicColor = useDynamic) {
       ChatScreen(onThemeChange = { mode -> themeMode = mode; ThemeManager.set(ctx, mode) })
     }
   }
