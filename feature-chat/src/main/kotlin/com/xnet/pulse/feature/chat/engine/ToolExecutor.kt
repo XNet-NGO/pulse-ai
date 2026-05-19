@@ -3,8 +3,6 @@ package com.xnet.pulse.feature.chat.engine
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.provider.AlarmClock
-import android.provider.CalendarContract
 import com.xnet.pulse.core.model.ToolDef
 import com.xnet.pulse.core.network.PollinationsClient
 import com.xnet.pulse.feature.chat.db.ChatDao
@@ -41,9 +39,6 @@ class ToolExecutor @Inject constructor(
     ToolDef("write_file", "Write content to a file.", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""", false),
     ToolDef("get_location", "Get device GPS location.", """{"type":"object","properties":{}}""", true),
     ToolDef("open_intent", "Open a URL, map, or app.", """{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}""", false),
-    ToolDef("read_calendar", "Read upcoming calendar events.", """{"type":"object","properties":{"days":{"type":"integer"}}}""", true),
-    ToolDef("create_event", "Create a calendar event.", """{"type":"object","properties":{"title":{"type":"string"},"start_time":{"type":"string"},"end_time":{"type":"string"},"location":{"type":"string"},"description":{"type":"string"}},"required":["title"]}""", false),
-    ToolDef("set_alarm", "Set an alarm.", """{"type":"object","properties":{"hour":{"type":"integer"},"minutes":{"type":"integer"},"message":{"type":"string"}},"required":["hour","minutes"]}""", false),
     ToolDef("analyze_image", "Analyze an image using vision.", """{"type":"object","properties":{"url":{"type":"string"},"question":{"type":"string"}},"required":["url"]}""", true),
     ToolDef("image_generate", "Generate an image from a text prompt.", """{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"]}""", true),
     ToolDef("memory_store", "Remember a fact across conversations.", """{"type":"object","properties":{"key":{"type":"string"},"content":{"type":"string"},"category":{"type":"string"}},"required":["key","content"]}""", true),
@@ -59,9 +54,6 @@ class ToolExecutor @Inject constructor(
     "write_file" -> writeFile(args["path"]?.toString() ?: "", args["content"]?.toString() ?: "")
     "get_location" -> getLocation()
     "open_intent" -> openIntent(args["uri"]?.toString() ?: "")
-    "read_calendar" -> readCalendar((args["days"] as? Number)?.toInt() ?: 7)
-    "create_event" -> createEvent(args)
-    "set_alarm" -> setAlarm((args["hour"] as? Number)?.toInt() ?: 0, (args["minutes"] as? Number)?.toInt() ?: 0, args["message"]?.toString())
     "analyze_image" -> analyzeImage(args["url"]?.toString() ?: "", args["question"]?.toString())
     "image_generate" -> imageGenerate(args["prompt"]?.toString() ?: "")
     "memory_store" -> memoryStore(args["key"]?.toString() ?: "", args["content"]?.toString() ?: "", args["category"]?.toString() ?: "general")
@@ -141,53 +133,6 @@ class ToolExecutor @Inject constructor(
       "Opened: $uri"
     } catch (e: Exception) { "Failed to open: ${e.message}" }
   }
-
-  private fun readCalendar(days: Int): String {
-    return try {
-      val now = System.currentTimeMillis()
-      val end = now + days * 86400000L
-      val uri = android.provider.CalendarContract.Events.CONTENT_URI
-      val projection = arrayOf("title", "dtstart", "dtend", "eventLocation")
-      val selection = "dtstart >= ? AND dtstart <= ?"
-      val cursor = ctx.contentResolver.query(uri, projection, selection, arrayOf("$now", "$end"), "dtstart ASC")
-        ?: return "Calendar permission not granted"
-      val events = buildString {
-        while (cursor.moveToNext()) {
-          val title = cursor.getString(0) ?: "Untitled"
-          val start = java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.getDefault()).format(java.util.Date(cursor.getLong(1)))
-          val loc = cursor.getString(3)?.takeIf { it.isNotBlank() }?.let { " @ $it" } ?: ""
-          appendLine("• $title — $start$loc")
-        }
-      }
-      cursor.close()
-      events.ifBlank { "No events in the next $days days" }
-    } catch (e: SecurityException) { "Calendar permission not granted" }
-  }
-
-  private fun createEvent(args: Map<String, Any?>): String {
-    val intent = Intent(Intent.ACTION_INSERT).apply {
-      data = CalendarContract.Events.CONTENT_URI
-      putExtra(CalendarContract.Events.TITLE, args["title"]?.toString() ?: "")
-      args["location"]?.toString()?.let { putExtra(CalendarContract.Events.EVENT_LOCATION, it) }
-      args["description"]?.toString()?.let { putExtra(CalendarContract.Events.DESCRIPTION, it) }
-      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    ctx.startActivity(intent)
-    return "Calendar event creation opened"
-  }
-
-  private fun setAlarm(hour: Int, minutes: Int, message: String?): String {
-    val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-      putExtra(AlarmClock.EXTRA_HOUR, hour)
-      putExtra(AlarmClock.EXTRA_MINUTES, minutes)
-      message?.let { putExtra(AlarmClock.EXTRA_MESSAGE, it) }
-      putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    ctx.startActivity(intent)
-    return "Alarm set for %02d:%02d".format(hour, minutes)
-  }
-
   private suspend fun analyzeImage(url: String, question: String?): String = withContext(Dispatchers.IO) {
     val msgs = listOf(
       JSONObject().put("role", "user").put("content", JSONArray().apply {
