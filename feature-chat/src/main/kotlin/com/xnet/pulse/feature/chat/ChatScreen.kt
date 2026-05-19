@@ -266,52 +266,25 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           isUser -> Text(content, style = MaterialTheme.typography.bodyMedium)
           msg.status == MessageStatus.STREAMING -> StreamingText(content)
           else -> {
-            // Split content into text segments and images, render interleaved
-            val imgPattern = Regex("""!\[([^\]]*)\]\(([^)]+)\)""")
-            val parts = buildList {
-              var lastEnd = 0
-              imgPattern.findAll(content).forEach { match ->
-                val before = content.substring(lastEnd, match.range.first).trim()
-                if (before.replace(Regex("""[\s|*_\-:]+"""), "").isNotBlank()) add(before to null)
-                add(match.groupValues[1] to match.groupValues[2])
-                lastEnd = match.range.last + 1
-              }
-              val remaining = content.substring(lastEnd).trim()
-              if (remaining.replace(Regex("""[\s|*_\-:]+"""), "").isNotBlank()) add(remaining to null)
+            val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
+            val uiMatches = uiPattern.findAll(content).toList()
+            val mdContent = uiPattern.replace(content, "").trim()
+            if (mdContent.isNotBlank()) {
+              com.fluid.compose.UniversalMarkdown(content = mdContent, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, alt ->
+                val resolved = if (url.startsWith("/")) "file://${LocalContext.current.filesDir}/pulse$url" else url
+                coil.compose.AsyncImage(
+                  model = resolved,
+                  contentDescription = alt,
+                  modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
+                  contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                )
+              })
             }
-            val seen = mutableSetOf<String>()
-            parts.forEach { (text, url) ->
-              if (url != null) {
-                if (seen.add(url)) {
-                  // Image via Coil (supports SVG, GIF, WebP, JPEG, PNG)
-                  val resolved = if (url.startsWith("/")) "file://${LocalContext.current.filesDir}/pulse$url" else url
-                  coil.compose.AsyncImage(
-                    model = resolved,
-                    contentDescription = text,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
-                    contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
-                  )
-                }
-              } else {
-                // Text/markdown - clean up leftover table fragments
-                val cleaned = text.lines().filter { line ->
-                  line.replace(Regex("""[\s|*_\-:]+"""), "").isNotBlank()
-                }.joinToString("\n").trim()
-                if (cleaned.isNotBlank()) {
-                  val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
-                  val uiMatches = uiPattern.findAll(cleaned).toList()
-                  val mdText = uiPattern.replace(cleaned, "").trim()
-                  if (mdText.isNotBlank()) {
-                    com.fluid.compose.UniversalMarkdown(content = mdText, animateStreaming = false, modifier = Modifier.fillMaxWidth())
-                  }
-                  uiMatches.forEach { match ->
-                    val json = match.groupValues[1].trim()
-                    val node = com.xnet.pulse.feature.chat.dynamicui.AiopeUiParser.parse(json)
-                  if (node != null) {
-                    com.xnet.pulse.feature.chat.dynamicui.AiopeUiRenderer(node = node, isInteractive = true, onCallback = { _, _ -> })
-                  }
-                }
-                }
+            uiMatches.forEach { match ->
+              val json = match.groupValues[1].trim()
+              val node = com.xnet.pulse.feature.chat.dynamicui.AiopeUiParser.parse(json)
+              if (node != null) {
+                com.xnet.pulse.feature.chat.dynamicui.AiopeUiRenderer(node = node, isInteractive = true, onCallback = { _, _ -> })
               }
             }
           }
