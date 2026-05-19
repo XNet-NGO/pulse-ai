@@ -223,12 +223,15 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
         if (msg.imagePaths.isNotEmpty()) {
           Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             msg.imagePaths.filter { it.isNotBlank() }.forEach { uri ->
+              val imgCtx = LocalContext.current
               val bmp = remember(uri) {
                 try {
                   if (uri.startsWith("file://")) {
                     android.graphics.BitmapFactory.decodeFile(uri.removePrefix("file://"))
                   } else if (uri.startsWith("http://") || uri.startsWith("https://")) {
                     java.net.URL(uri).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+                  } else if (uri.startsWith("content://")) {
+                    android.provider.MediaStore.Images.Media.getBitmap(imgCtx.contentResolver, android.net.Uri.parse(uri))
                   } else {
                     android.graphics.BitmapFactory.decodeFile(uri)
                   }
@@ -275,7 +278,11 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
                 value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                   try {
                     if (resolvedUrl.startsWith("file://")) android.graphics.BitmapFactory.decodeFile(resolvedUrl.removePrefix("file://"))
-                    else java.net.URL(resolvedUrl).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+                    else {
+                      val req = okhttp3.Request.Builder().url(resolvedUrl).build()
+                      okhttp3.OkHttpClient.Builder().followRedirects(true).connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS).readTimeout(60, java.util.concurrent.TimeUnit.SECONDS).build()
+                        .newCall(req).execute().use { r -> r.body?.byteStream()?.use { android.graphics.BitmapFactory.decodeStream(it) } }
+                    }
                   } catch (_: Exception) { null }
                 }
               }
