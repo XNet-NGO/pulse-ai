@@ -1,5 +1,7 @@
 package com.xnet.pulse.feature.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
@@ -23,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -34,6 +37,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.xnet.pulse.core.model.MessageStatus
 import com.xnet.pulse.core.model.Role
+import com.xnet.pulse.feature.chat.engine.AttachmentProcessor
+import com.xnet.pulse.feature.chat.engine.VoiceManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,14 +116,35 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     }
 
     // Compose bar — flush to keyboard, no extra padding
+    val ctx = LocalContext.current
+    val voiceManager = viewModel.voiceManager
+    val isListening by voiceManager.isListening.collectAsState()
+    val voiceResult by voiceManager.result.collectAsState()
+    var text by remember { mutableStateOf("") }
+
+    // Auto-fill from voice result
+    LaunchedEffect(voiceResult) {
+      voiceResult?.let { text = it; voiceManager.consumeResult() }
+    }
+
+    // File picker
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+      uri?.let {
+        val attachment = viewModel.attachmentProcessor.process(it)
+        if (attachment != null) {
+          val prefix = if (attachment.type == "image") "[Image: ${attachment.name}]\n" else "[File: ${attachment.name}]\n${attachment.content}\n"
+          text = prefix + text
+        }
+      }
+    }
+
     Row(
       Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      IconButton(onClick = { /* TODO: file picker */ }) {
+      IconButton(onClick = { filePicker.launch("*/*") }) {
         Icon(Icons.Default.AttachFile, "Attach", tint = MaterialTheme.colorScheme.onSurfaceVariant)
       }
-      var text by remember { mutableStateOf("") }
       OutlinedTextField(
         value = text,
         onValueChange = { text = it },
@@ -134,8 +160,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
       )
       Spacer(Modifier.width(2.dp))
       if (text.isBlank()) {
-        IconButton(onClick = { /* TODO: voice */ }, enabled = !isStreaming) {
-          Icon(Icons.Default.Mic, "Voice", tint = MaterialTheme.colorScheme.primary)
+        IconButton(onClick = { if (isListening) voiceManager.stopListening() else voiceManager.startListening() }, enabled = !isStreaming) {
+          Icon(if (isListening) Icons.Default.MicOff else Icons.Default.Mic, "Voice", tint = if (isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
       } else {
         IconButton(onClick = { viewModel.send(text.trim()); text = ""; scope.launch { listState.animateScrollToItem(messages.size) } }, enabled = !isStreaming) {
@@ -154,7 +180,7 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
   val shape = RoundedCornerShape(16.dp, 16.dp, if (isUser) 4.dp else 16.dp, if (isUser) 16.dp else 4.dp)
 
   Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
-    Surface(shape = shape, color = bgColor, modifier = Modifier.widthIn(max = 320.dp)) {
+    Surface(shape = shape, color = bgColor, modifier = Modifier.widthIn(max = if (isUser) 300.dp else 10000.dp).fillMaxWidth(if (isUser) 0.8f else 0.95f)) {
       Column(Modifier.padding(12.dp)) {
         if (msg.reasoning.isNotBlank()) {
           Text(msg.reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))

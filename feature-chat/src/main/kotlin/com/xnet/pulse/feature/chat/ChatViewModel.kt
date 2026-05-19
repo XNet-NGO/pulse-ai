@@ -6,6 +6,8 @@ import com.xnet.pulse.core.model.*
 import com.xnet.pulse.core.network.Orchestrator
 import com.xnet.pulse.feature.chat.db.*
 import com.xnet.pulse.feature.chat.engine.ToolExecutor
+import com.xnet.pulse.feature.chat.engine.VoiceManager
+import com.xnet.pulse.feature.chat.engine.AttachmentProcessor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -19,6 +21,8 @@ class ChatViewModel @Inject constructor(
   private val dao: ChatDao,
   private val orchestrator: Orchestrator,
   private val toolExecutor: ToolExecutor,
+  val voiceManager: VoiceManager,
+  val attachmentProcessor: AttachmentProcessor,
 ) : ViewModel() {
 
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
