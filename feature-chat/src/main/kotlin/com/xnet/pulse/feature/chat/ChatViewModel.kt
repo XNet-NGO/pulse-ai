@@ -37,7 +37,7 @@ class ChatViewModel @Inject constructor(
   val conversations = dao.getConversations()
 
   private var currentConvId: String = UUID.randomUUID().toString()
-  private var model = "mistral-small"
+  private var model = "mistral-4"
 
   init {
     viewModelScope.launch { dao.insertConversation(ConversationEntity(id = currentConvId)) }
