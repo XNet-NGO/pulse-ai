@@ -37,13 +37,15 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.xnet.pulse.core.model.MessageStatus
 import com.xnet.pulse.core.model.Role
+import com.xnet.pulse.core.designsystem.LocalThemeMode
+import com.xnet.pulse.core.designsystem.ThemeMode
 import com.xnet.pulse.feature.chat.engine.AttachmentProcessor
 import com.xnet.pulse.feature.chat.engine.VoiceManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
+fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onThemeChange: (ThemeMode) -> Unit = {}) {
   val messages by viewModel.messages.collectAsState()
   val status by viewModel.status.collectAsState()
   val isStreaming by viewModel.isStreaming.collectAsState()
@@ -91,7 +93,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   // Settings
   if (showSettings) {
     ModalBottomSheet(onDismissRequest = { showSettings = false }) {
-      SettingsSheet()
+      SettingsSheet(onThemeChange = onThemeChange)
     }
   }
 
@@ -138,12 +140,16 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     }
 
     // File picker
+    var pendingImages by remember { mutableStateOf<List<String>>(emptyList()) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
       uri?.let {
         val attachment = viewModel.attachmentProcessor.process(it)
         if (attachment != null) {
-          val prefix = if (attachment.type == "image") "[Image: ${attachment.name}]\n" else "[File: ${attachment.name}]\n${attachment.content}\n"
-          text = prefix + text
+          if (attachment.type == "image") {
+            pendingImages = pendingImages + attachment.content
+          } else {
+            text = "[File: ${attachment.name}]\n${attachment.content}\n" + text
+          }
         }
       }
     }
@@ -165,7 +171,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         enabled = !isStreaming,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
         keyboardActions = KeyboardActions(onSend = {
-          if (text.isNotBlank()) { viewModel.send(text.trim()); text = ""; scope.launch { listState.animateScrollToItem(messages.size) } }
+          if (text.isNotBlank() || pendingImages.isNotEmpty()) { viewModel.send(text.trim(), pendingImages); text = ""; pendingImages = emptyList(); scope.launch { listState.animateScrollToItem(messages.size) } }
         }),
       )
       Spacer(Modifier.width(2.dp))
@@ -174,7 +180,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
           Icon(if (isListening) Icons.Default.MicOff else Icons.Default.Mic, "Voice", tint = if (isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
       } else {
-        IconButton(onClick = { viewModel.send(text.trim()); text = ""; scope.launch { listState.animateScrollToItem(messages.size) } }, enabled = !isStreaming) {
+        IconButton(onClick = { viewModel.send(text.trim(), pendingImages); text = ""; pendingImages = emptyList(); scope.launch { listState.animateScrollToItem(messages.size) } }, enabled = !isStreaming) {
           Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = MaterialTheme.colorScheme.primary)
         }
       }
@@ -319,8 +325,9 @@ private fun StreamingText(content: String) {
 }
 
 @Composable
-private fun SettingsSheet() {
-  var themeMode by remember { mutableStateOf("system") }
+private fun SettingsSheet(onThemeChange: (ThemeMode) -> Unit = {}) {
+  val currentTheme = LocalThemeMode.current
+  var themeMode by remember { mutableStateOf(currentTheme) }
   var autoRead by remember { mutableStateOf(false) }
   var showThinking by remember { mutableStateOf(true) }
 
@@ -329,11 +336,11 @@ private fun SettingsSheet() {
     HorizontalDivider()
     Text("Theme", style = MaterialTheme.typography.titleSmall)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      listOf("light", "dark", "system", "custom").forEach { mode ->
+      ThemeMode.entries.forEach { mode ->
         FilterChip(
           selected = themeMode == mode,
-          onClick = { themeMode = mode },
-          label = { Text(mode.replaceFirstChar { it.uppercase() }) },
+          onClick = { themeMode = mode; onThemeChange(mode) },
+          label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) },
         )
       }
     }

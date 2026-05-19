@@ -24,8 +24,9 @@ import javax.inject.Singleton
 class PollinationsClient @Inject constructor() {
 
   companion object {
-    private const val BASE_URL = "https://gen.pollinations.ai/openai/v1"
+    private const val BASE_URL = "https://gen.pollinations.ai/v1"
     private const val IMAGE_URL = "https://image.pollinations.ai/prompt"
+    private const val API_KEY = "REDACTED_KEY"
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
     private val REASONING_TAGS = listOf("think", "thinking", "thought")
     private val client = OkHttpClient.Builder()
@@ -37,7 +38,7 @@ class PollinationsClient @Inject constructor() {
       .build()
   }
 
-  var apiKey: String = "" // Set from BuildConfig or DI
+  var apiKey: String = API_KEY
 
   fun stream(
     messages: List<JSONObject>,
