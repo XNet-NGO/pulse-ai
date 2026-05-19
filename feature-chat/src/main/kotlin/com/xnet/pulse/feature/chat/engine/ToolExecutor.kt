@@ -134,17 +134,75 @@ class ToolExecutor @Inject constructor(
     } catch (e: Exception) { "Failed to open: ${e.message}" }
   }
   private suspend fun analyzeImage(url: String, question: String?): String = withContext(Dispatchers.IO) {
-    val msgs = listOf(
-      JSONObject().put("role", "user").put("content", JSONArray().apply {
-        put(JSONObject().put("type", "text").put("text", question ?: "Describe this image in detail."))
-        put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", url)))
-      })
-    )
-    val sb = StringBuilder()
-    pollinationsClient.stream(msgs, "openai").collect { ev ->
-      if (ev is com.xnet.pulse.core.model.StreamEvent.Delta) sb.append(ev.text)
+    try {
+      val imgData = fetchImageBytes(url)
+      val normalized = normalizeForVision(imgData, url)
+      val b64 = android.util.Base64.encodeToString(normalized, android.util.Base64.NO_WRAP)
+      val dataUri = "data:image/jpeg;base64,$b64"
+      val msgs = listOf(
+        JSONObject().put("role", "user").put("content", JSONArray().apply {
+          put(JSONObject().put("type", "text").put("text", question ?: "Describe this image in detail."))
+          put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", dataUri)))
+        })
+      )
+      val sb = StringBuilder()
+      pollinationsClient.stream(msgs, "openai").collect { ev ->
+        if (ev is com.xnet.pulse.core.model.StreamEvent.Delta) sb.append(ev.text)
+      }
+      sb.toString().ifBlank { "Could not analyze image" }
+    } catch (e: Exception) {
+      "Image analysis failed: ${e.message}"
     }
-    sb.toString().ifBlank { "Could not analyze image" }
+  }
+
+  private fun fetchImageBytes(url: String): ByteArray {
+    if (url.startsWith("file://")) return java.io.File(url.removePrefix("file://")).readBytes()
+    if (url.startsWith("/")) return java.io.File(url).readBytes()
+    val req = Request.Builder().url(url)
+      .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/125.0")
+      .header("Accept", "image/*,*/*")
+      .build()
+    val resp = http.newCall(req).execute()
+    if (resp.code != 200) throw Exception("HTTP ${resp.code} from $url")
+    return resp.body?.bytes() ?: throw Exception("Empty response")
+  }
+
+  private fun normalizeForVision(data: ByteArray, url: String): ByteArray {
+    // SVG detection
+    val isSvg = url.lowercase().endsWith(".svg") ||
+      (data.isNotEmpty() && (data[0] == '<'.code.toByte() || (data.size > 3 && data[0] == 0xEF.toByte() && data[1] == 0xBB.toByte())))
+    if (isSvg) {
+      try {
+        val svg = com.caverock.androidsvg.SVG.getFromInputStream(data.inputStream())
+        val w = svg.documentWidth.takeIf { it > 0 } ?: 1024f
+        val h = svg.documentHeight.takeIf { it > 0 } ?: 1024f
+        val scale = 1024f / maxOf(w, h)
+        val bw = (w * scale).toInt()
+        val bh = (h * scale).toInt()
+        val bmp = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        svg.documentWidth = bw.toFloat()
+        svg.documentHeight = bh.toFloat()
+        svg.renderToCanvas(canvas)
+        return bitmapToJpeg(bmp)
+      } catch (_: Exception) {}
+    }
+    // Decode any format Android supports
+    val bmp = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.size) ?: return data
+    val maxDim = 1024
+    val s = if (bmp.width > maxDim || bmp.height > maxDim) maxDim.toFloat() / maxOf(bmp.width, bmp.height) else 1f
+    val scaled = if (s < 1f) android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * s).toInt(), (bmp.height * s).toInt(), true) else bmp
+    val result = bitmapToJpeg(scaled)
+    if (scaled !== bmp) bmp.recycle()
+    return result
+  }
+
+  private fun bitmapToJpeg(bmp: android.graphics.Bitmap): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+    bmp.recycle()
+    return out.toByteArray()
   }
 
   private suspend fun imageGenerate(prompt: String): String {

@@ -46,6 +46,7 @@ dependencies {
   implementation(libs.hilt.worker)
   implementation(libs.coil.compose)
   implementation(libs.coil.svg)
+  implementation("com.caverock:androidsvg-aar:1.4")
 
   // UniversalMarkdown (AARs in :app, classes available via transitive)
   compileOnly(files("../app/libs/universal-markdown-compose.aar"))
