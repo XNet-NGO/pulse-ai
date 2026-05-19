@@ -281,12 +281,16 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
                   url.startsWith("/") -> java.io.File("${LocalContext.current.filesDir}/pulse$url")
                   else -> url
                 }
-                coil.compose.AsyncImage(
-                  model = resolved,
-                  contentDescription = alt,
-                  modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
-                  contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
-                )
+                var failed by remember { mutableStateOf(false) }
+                if (!failed) {
+                  coil.compose.AsyncImage(
+                    model = coil.request.ImageRequest.Builder(LocalContext.current).data(resolved).crossfade(true)
+                      .listener(onError = { _, _ -> failed = true }).build(),
+                    contentDescription = alt,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                  )
+                }
               })
             }
             uiMatches.forEach { match ->
