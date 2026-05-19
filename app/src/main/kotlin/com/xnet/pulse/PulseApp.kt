@@ -13,6 +13,16 @@ class PulseApp : Application(), ImageLoaderFactory {
     com.xnet.pulse.feature.chat.engine.DirectoryManager.init(this)
   }
   override fun newImageLoader() = ImageLoader.Builder(this)
+    .okHttpClient {
+      okhttp3.OkHttpClient.Builder()
+        .addInterceptor { chain ->
+          chain.proceed(chain.request().newBuilder()
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/125.0")
+            .header("Accept", "image/*,*/*")
+            .build())
+        }
+        .build()
+    }
     .components { add(SvgDecoder.Factory()) }
     .build()
 }
