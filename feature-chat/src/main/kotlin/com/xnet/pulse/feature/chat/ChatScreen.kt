@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -218,35 +219,36 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
   Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
     Surface(shape = shape, color = bgColor, modifier = Modifier.widthIn(max = if (isUser) 300.dp else 10000.dp).fillMaxWidth(if (isUser) 0.8f else 0.95f)) {
       Column(Modifier.padding(12.dp)) {
-        // Render attached images
+        // Render attached images (aiope2 approach: AndroidView for stability)
         if (msg.imagePaths.isNotEmpty()) {
-          msg.imagePaths.filter { it.isNotBlank() }.forEach { path ->
-            if (path.startsWith("http://") || path.startsWith("https://")) {
-              // URL image - use Coil
-              coil.compose.AsyncImage(
-                model = coil.request.ImageRequest.Builder(LocalContext.current)
-                  .data(path)
-                  .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                  .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-                  .crossfade(true)
-                  .build(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(bottom = 8.dp),
-                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-              )
-            } else {
-              // File path - decode bitmap
-              val filePath = if (path.startsWith("file://")) path.removePrefix("file://") else path
-              val bmp = remember(filePath) {
-                try { android.graphics.BitmapFactory.decodeFile(filePath) } catch (_: Exception) { null }
+          Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            msg.imagePaths.filter { it.isNotBlank() }.forEach { uri ->
+              val bmp = remember(uri) {
+                try {
+                  if (uri.startsWith("file://")) {
+                    android.graphics.BitmapFactory.decodeFile(uri.removePrefix("file://"))
+                  } else if (uri.startsWith("http://") || uri.startsWith("https://")) {
+                    java.net.URL(uri).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+                  } else {
+                    android.graphics.BitmapFactory.decodeFile(uri)
+                  }
+                } catch (_: Exception) { null }
               }
+              val isGenerated = uri.startsWith("file://") && uri.contains("/generated/")
+              val imgSize = if (isGenerated) 256.dp else 64.dp
               if (bmp != null) {
-                Image(
-                  bitmap = bmp.asImageBitmap(),
-                  contentDescription = null,
-                  modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(bottom = 8.dp),
-                  contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                )
+                androidx.compose.ui.viewinterop.AndroidView(factory = { c ->
+                  android.widget.ImageView(c).apply {
+                    scaleType = if (isGenerated) android.widget.ImageView.ScaleType.FIT_CENTER else android.widget.ImageView.ScaleType.CENTER_CROP
+                    setImageBitmap(bmp)
+                    clipToOutline = true
+                    outlineProvider = object : android.view.ViewOutlineProvider() {
+                      override fun getOutline(v: android.view.View, o: android.graphics.Outline) {
+                        o.setRoundRect(0, 0, v.width, v.height, 24f)
+                      }
+                    }
+                  }
+                }, modifier = Modifier.size(imgSize))
               }
             }
           }
@@ -261,19 +263,26 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           isUser -> Text(content, style = MaterialTheme.typography.bodyMedium)
           msg.status == MessageStatus.STREAMING -> StreamingText(content)
           else -> {
-            // Render inline images from markdown
-            MessageImages(content)
             // Split into markdown and aiope-ui blocks
             val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
             val matches = uiPattern.findAll(content).toList()
             if (matches.isEmpty()) {
-              com.fluid.compose.UniversalMarkdown(content = content, animateStreaming = false, modifier = Modifier.fillMaxWidth())
+              com.fluid.compose.UniversalMarkdown(content = content, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, alt ->
+                coil.compose.AsyncImage(
+                  model = url,
+                  contentDescription = alt,
+                  modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
+                  contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                )
+              })
             } else {
               var lastEnd = 0
               matches.forEach { match ->
                 val before = content.substring(lastEnd, match.range.first).trim()
                 if (before.isNotBlank()) {
-                  com.fluid.compose.UniversalMarkdown(content = before, animateStreaming = false, modifier = Modifier.fillMaxWidth())
+                  com.fluid.compose.UniversalMarkdown(content = before, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, alt ->
+                    coil.compose.AsyncImage(model = url, contentDescription = alt, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth)
+                  })
                   Spacer(Modifier.height(8.dp))
                 }
                 val json = match.groupValues[1].trim()
@@ -286,7 +295,9 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
               }
               val after = content.substring(lastEnd).trim()
               if (after.isNotBlank()) {
-                com.fluid.compose.UniversalMarkdown(content = after, animateStreaming = false, modifier = Modifier.fillMaxWidth())
+                com.fluid.compose.UniversalMarkdown(content = after, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, alt ->
+                  coil.compose.AsyncImage(model = url, contentDescription = alt, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth)
+                })
               }
             }
           }
@@ -352,27 +363,6 @@ private fun StreamingText(content: String) {
     }
   }
   Text(annotated, style = MaterialTheme.typography.bodyMedium)
-}
-
-/** Render images from completed message content */
-@Composable
-private fun MessageImages(content: String) {
-  val imgPattern = remember { Regex("""!\[([^\]]*)\]\(([^)]+)\)""") }
-  val images = remember(content) { imgPattern.findAll(content).toList() }
-  images.forEach { match ->
-    val url = match.groupValues[2]
-    coil.compose.AsyncImage(
-      model = coil.request.ImageRequest.Builder(LocalContext.current)
-        .data(url)
-        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-        .crossfade(true)
-        .build(),
-      contentDescription = match.groupValues[1],
-      modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp),
-      contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-    )
-  }
 }
 
 @Composable

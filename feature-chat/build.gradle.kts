@@ -48,7 +48,7 @@ dependencies {
 
   // UniversalMarkdown (AARs in :app, classes available via transitive)
   compileOnly(":universal-markdown-compose@aar")
-  compileOnly(":fluid-markdown@aar")
+  compileOnly(":universal-markdown-compose@aar")
   compileOnly(":markwon-core@aar")
   implementation("com.atlassian.commonmark:commonmark:0.15.2")
   implementation(libs.androidx.appcompat)
