@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -13,19 +12,17 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -55,32 +52,28 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
   }
 
-  // Report dialog
   if (reportMessageId != null) {
     AlertDialog(
       onDismissRequest = { reportMessageId = null },
       title = { Text("Report Message") },
       text = { Text("Flag this response as inappropriate or harmful?") },
-      confirmButton = { TextButton(onClick = { reportMessageId = null /* TODO: log report */ }) { Text("Report") } },
+      confirmButton = { TextButton(onClick = { reportMessageId = null }) { Text("Report") } },
       dismissButton = { TextButton(onClick = { reportMessageId = null }) { Text("Cancel") } },
     )
   }
 
-  // Conversation drawer (left menu)
   if (showDrawer) {
     ModalBottomSheet(onDismissRequest = { showDrawer = false }) {
       Column(Modifier.padding(16.dp)) {
         TextButton(onClick = { viewModel.newConversation(); showDrawer = false }) { Text("+ New Chat") }
-        TextButton(onClick = { showDrawer = false /* TODO: nav to library */ }) { Text("📁 Library") }
+        TextButton(onClick = { showDrawer = false }) { Text("📁 Library") }
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         conversations.forEach { conv ->
           ListItem(
             headlineContent = { Text(conv.title) },
             modifier = Modifier.clickable { viewModel.loadConversation(conv.id); showDrawer = false },
             trailingContent = {
-              IconButton(onClick = { viewModel.deleteConversation(conv.id) }) {
-                Icon(Icons.Default.Delete, "Delete")
-              }
+              IconButton(onClick = { viewModel.deleteConversation(conv.id) }) { Icon(Icons.Default.Delete, "Delete") }
             },
           )
         }
@@ -88,40 +81,68 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     }
   }
 
-  Column(Modifier.fillMaxSize().imePadding()) {
+  Column(
+    Modifier
+      .fillMaxSize()
+      .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
+      .imePadding()
+  ) {
     // Top bar
-    Surface(tonalElevation = 2.dp) {
-      Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { showDrawer = true }) { Icon(Icons.Default.Menu, "Menu") }
-        Text("AIO Pulse", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-      }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+      IconButton(onClick = { showDrawer = true }) { Icon(Icons.Default.Menu, "Menu") }
+      Text("AIO Pulse", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
     }
 
-    // Message list
+    // Messages
     LazyColumn(
       state = listState,
       modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
-      contentPadding = PaddingValues(vertical = 12.dp),
+      contentPadding = PaddingValues(vertical = 8.dp),
     ) {
       items(messages, key = { it.id }) { msg ->
         MessageBubble(msg, onReport = if (msg.role == Role.ASSISTANT) {{ reportMessageId = msg.id }} else null)
       }
     }
 
-    // Status animation
+    // Status
     AnimatedVisibility(visible = status != null) {
       StatusBar(status ?: "")
     }
 
-    // Compose bar (floats above keyboard via imePadding on parent)
-    ComposeBar(
-      enabled = !isStreaming,
-      onSend = { text ->
-        viewModel.send(text)
-        scope.launch { listState.animateScrollToItem(messages.size) }
-      },
-    )
+    // Compose bar — flush to keyboard, no extra padding
+    Row(
+      Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      IconButton(onClick = { /* TODO: file picker */ }) {
+        Icon(Icons.Default.AttachFile, "Attach", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+      var text by remember { mutableStateOf("") }
+      OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        modifier = Modifier.weight(1f),
+        placeholder = { Text("Message") },
+        shape = RoundedCornerShape(24.dp),
+        maxLines = 4,
+        enabled = !isStreaming,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+        keyboardActions = KeyboardActions(onSend = {
+          if (text.isNotBlank()) { viewModel.send(text.trim()); text = ""; scope.launch { listState.animateScrollToItem(messages.size) } }
+        }),
+      )
+      Spacer(Modifier.width(2.dp))
+      if (text.isBlank()) {
+        IconButton(onClick = { /* TODO: voice */ }, enabled = !isStreaming) {
+          Icon(Icons.Default.Mic, "Voice", tint = MaterialTheme.colorScheme.primary)
+        }
+      } else {
+        IconButton(onClick = { viewModel.send(text.trim()); text = ""; scope.launch { listState.animateScrollToItem(messages.size) } }, enabled = !isStreaming) {
+          Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = MaterialTheme.colorScheme.primary)
+        }
+      }
+    }
   }
 }
 
@@ -140,17 +161,38 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
           Spacer(Modifier.height(4.dp))
         }
         val content = msg.content.ifBlank { if (msg.status == MessageStatus.STREAMING) "..." else "" }
-        if (!isUser && content.isNotBlank() && msg.status != MessageStatus.STREAMING) {
-          com.fluid.compose.UniversalMarkdown(
-            content = content,
-            animateStreaming = false,
-            modifier = Modifier.fillMaxWidth(),
-          )
-        } else if (!isUser && content.isNotBlank()) {
-          // Lightweight pre-render during streaming (like headless streamHtml)
-          StreamingText(content)
-        } else {
-          Text(content, style = MaterialTheme.typography.bodyMedium)
+        when {
+          content.isBlank() -> {}
+          isUser -> Text(content, style = MaterialTheme.typography.bodyMedium)
+          msg.status == MessageStatus.STREAMING -> StreamingText(content)
+          else -> {
+            // Split into markdown and aiope-ui blocks
+            val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
+            val matches = uiPattern.findAll(content).toList()
+            if (matches.isEmpty()) {
+              com.fluid.compose.UniversalMarkdown(content = content, animateStreaming = false, modifier = Modifier.fillMaxWidth())
+            } else {
+              var lastEnd = 0
+              matches.forEach { match ->
+                val before = content.substring(lastEnd, match.range.first).trim()
+                if (before.isNotBlank()) {
+                  com.fluid.compose.UniversalMarkdown(content = before, animateStreaming = false, modifier = Modifier.fillMaxWidth())
+                  Spacer(Modifier.height(8.dp))
+                }
+                val json = match.groupValues[1].trim()
+                val node = com.xnet.pulse.feature.chat.dynamicui.AiopeUiParser.parse(json)
+                if (node != null) {
+                  com.xnet.pulse.feature.chat.dynamicui.AiopeUiRenderer(node = node, isInteractive = true, onCallback = { event, data -> /* TODO: send callback */ })
+                  Spacer(Modifier.height(8.dp))
+                }
+                lastEnd = match.range.last + 1
+              }
+              val after = content.substring(lastEnd).trim()
+              if (after.isNotBlank()) {
+                com.fluid.compose.UniversalMarkdown(content = after, animateStreaming = false, modifier = Modifier.fillMaxWidth())
+              }
+            }
+          }
         }
       }
     }
@@ -168,72 +210,44 @@ private fun StatusBar(label: String) {
     initialValue = 0.4f, targetValue = 1f,
     animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "alpha",
   )
-  Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-    Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.alpha(alpha))
+  Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
+    Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.alpha(alpha))
   }
 }
 
-@Composable
-private fun ComposeBar(enabled: Boolean, onSend: (String) -> Unit, onMic: () -> Unit = {}, onAttach: () -> Unit = {}, isListening: Boolean = false) {
-  var text by remember { mutableStateOf("") }
-
-  Surface(tonalElevation = 3.dp) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-      IconButton(onClick = onAttach, enabled = enabled) {
-        Icon(Icons.Default.AttachFile, contentDescription = "Attach")
-      }
-      OutlinedTextField(
-        value = text,
-        onValueChange = { text = it },
-        modifier = Modifier.weight(1f),
-        placeholder = { Text("Message") },
-        shape = RoundedCornerShape(24.dp),
-        maxLines = 4,
-        enabled = enabled,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-        keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) { onSend(text.trim()); text = "" } }),
-      )
-      Spacer(Modifier.width(4.dp))
-      if (text.isBlank()) {
-        IconButton(onClick = onMic, enabled = enabled) {
-          Icon(if (isListening) Icons.Default.MicOff else Icons.Default.Mic, contentDescription = "Voice", tint = if (isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-        }
-      } else {
-        IconButton(onClick = { onSend(text.trim()); text = "" }, enabled = enabled) {
-          Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = MaterialTheme.colorScheme.primary)
-        }
-      }
-    }
-  }
-}
-
+/** Lightweight pre-renderer for streaming — no remember() so it updates every recomposition */
 @Composable
 private fun StreamingText(content: String) {
-  val codeBg = androidx.compose.ui.graphics.Color(0xFF1E1E1E)
-  val inlineBg = androidx.compose.ui.graphics.Color(0xFF2D2D2D)
-  val annotated = remember(content) {
-    buildAnnotatedString {
-      var i = 0
-      while (i < content.length) {
-        when {
-          content.startsWith("```", i) -> {
-            val end = content.indexOf("```", i + 3)
-            val block = if (end != -1) content.substring(i + 3, end) else content.substring(i + 3)
-            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, background = codeBg)) { append(block.trimStart('\n')) }
-            i = if (end != -1) end + 3 else content.length
-          }
-          content[i] == '`' -> {
-            val end = content.indexOf('`', i + 1)
-            if (end != -1) { withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = inlineBg)) { append(content.substring(i + 1, end)) }; i = end + 1 }
-            else { append('`'); i++ }
-          }
-          content.startsWith("**", i) -> {
-            val end = content.indexOf("**", i + 2)
-            if (end != -1) { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(content.substring(i + 2, end)) }; i = end + 2 }
-            else { append("**"); i += 2 }
-          }
-          else -> { append(content[i]); i++ }
+  val codeBg = Color(0xFF1E1E1E)
+  val inlineBg = Color(0xFF2D2D2D)
+  // No remember — content changes every frame during streaming
+  val annotated = buildAnnotatedString {
+    var i = 0
+    while (i < content.length) {
+      when {
+        content.startsWith("```", i) -> {
+          val end = content.indexOf("```", i + 3)
+          val block = if (end != -1) content.substring(i + 3, end) else content.substring(i + 3)
+          // Strip language tag on first line
+          val code = block.substringAfter('\n', block)
+          withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, background = codeBg)) { append(code) }
+          i = if (end != -1) end + 3 else content.length
         }
+        content[i] == '`' -> {
+          val end = content.indexOf('`', i + 1)
+          if (end != -1) { withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = inlineBg)) { append(content.substring(i + 1, end)) }; i = end + 1 }
+          else { append('`'); i++ }
+        }
+        content.startsWith("**", i) -> {
+          val end = content.indexOf("**", i + 2)
+          if (end != -1) { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(content.substring(i + 2, end)) }; i = end + 2 }
+          else { append("**"); i += 2 }
+        }
+        content.startsWith("### ", i) -> { i += 4 } // skip heading markers
+        content.startsWith("## ", i) -> { i += 3 }
+        content.startsWith("# ", i) -> { i += 2 }
+        content.startsWith("- ", i) -> { append("• "); i += 2 }
+        else -> { append(content[i]); i++ }
       }
     }
   }

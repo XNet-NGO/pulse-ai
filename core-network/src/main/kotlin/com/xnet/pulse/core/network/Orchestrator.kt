@@ -4,6 +4,9 @@ import com.xnet.pulse.core.model.StreamEvent
 import com.xnet.pulse.core.model.ToolCallInfo
 import com.xnet.pulse.core.model.ToolDef
 import com.xnet.pulse.core.model.ToolResultInfo
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.json.JSONArray
@@ -85,10 +88,19 @@ class Orchestrator @Inject constructor(
     calls: List<ToolCallInfo>,
     executor: suspend (String, Map<String, Any?>) -> String,
   ): List<ToolResultInfo> {
-    // Sequential for now — parallel can be added via coroutineScope + async for PARALLEL_SAFE
-    return calls.map { c ->
+    if (calls.size == 1) {
+      val c = calls[0]
       val result = try { executor(c.name, c.arguments) } catch (e: Exception) { "Error: ${e.message}" }
-      ToolResultInfo(id = c.id, name = c.name, result = result.ifBlank { "(empty)" })
+      return listOf(ToolResultInfo(id = c.id, name = c.name, result = result.ifBlank { "(empty)" }))
+    }
+    // Multiple calls — run concurrently
+    return coroutineScope {
+      calls.map { c ->
+        async(Dispatchers.IO) {
+          val result = try { executor(c.name, c.arguments) } catch (e: Exception) { "Error: ${e.message}" }
+          ToolResultInfo(id = c.id, name = c.name, result = result.ifBlank { "(empty)" })
+        }
+      }.map { it.await() }
     }
   }
 
