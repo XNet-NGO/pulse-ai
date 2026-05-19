@@ -211,7 +211,7 @@ class ToolExecutor @Inject constructor(
         resp.body?.byteStream()?.use { input -> file.outputStream().use { input.copyTo(it) } }
       }
     }
-    return "![Generated image](/images/$filename)\n\nSaved to /images/$filename"
+    return "![Generated image](file://${file.absolutePath})\n\nSaved to /images/$filename"
   }
 
   private suspend fun memoryStore(key: String, content: String, category: String): String {
