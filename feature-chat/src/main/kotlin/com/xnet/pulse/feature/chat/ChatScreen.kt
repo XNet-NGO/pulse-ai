@@ -272,23 +272,26 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
               var lastEnd = 0
               imgPattern.findAll(content).forEach { match ->
                 val before = content.substring(lastEnd, match.range.first)
-                if (before.isNotBlank()) add(before to null)
+                if (before.replace(Regex("""[\s\-*_]+"""), "").isNotBlank()) add(before.trim() to null)
                 add(match.groupValues[1] to match.groupValues[2])
                 lastEnd = match.range.last + 1
               }
               val remaining = content.substring(lastEnd)
-              if (remaining.isNotBlank()) add(remaining to null)
+              if (remaining.replace(Regex("""[\s\-*_]+"""), "").isNotBlank()) add(remaining.trim() to null)
             }
+            val seen = mutableSetOf<String>()
             parts.forEach { (text, url) ->
               if (url != null) {
-                // Image via Coil (supports SVG, GIF, WebP, JPEG, PNG)
-                val resolved = if (url.startsWith("/")) "file://${LocalContext.current.filesDir}/pulse$url" else url
-                coil.compose.AsyncImage(
-                  model = resolved,
-                  contentDescription = text,
-                  modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
-                  contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
-                )
+                if (seen.add(url)) {
+                  // Image via Coil (supports SVG, GIF, WebP, JPEG, PNG)
+                  val resolved = if (url.startsWith("/")) "file://${LocalContext.current.filesDir}/pulse$url" else url
+                  coil.compose.AsyncImage(
+                    model = resolved,
+                    contentDescription = text,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                  )
+                }
               } else {
                 // Text/markdown
                 val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
