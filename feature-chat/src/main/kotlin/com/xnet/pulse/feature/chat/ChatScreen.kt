@@ -264,54 +264,27 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
         when {
           content.isBlank() -> {}
           isUser -> Text(content, style = MaterialTheme.typography.bodyMedium)
-          msg.status == MessageStatus.STREAMING -> StreamingText(content)
           else -> {
-            // Extract images from content and render them separately
-            val imgRegex = remember { Regex("""!\[([^\]]*)\]\(([^)]+)\)""") }
-            val imageUrls = remember(content) { imgRegex.findAll(content).map { it.groupValues[2] }.toList() }
-            val textOnly = remember(content) { imgRegex.replace(content, "").trim() }
-
-
-            // Render images via Coil (handles redirects, caching, large images)
-            imageUrls.forEach { url ->
-              val resolvedUrl = if (url.startsWith("/")) "file://${LocalContext.current.filesDir}/pulse$url" else url
-              coil.compose.AsyncImage(
-                model = coil.request.ImageRequest.Builder(LocalContext.current)
-                  .data(resolvedUrl)
-                  .crossfade(true)
-                  .build(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
-                contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
-              )
+            val uiPattern = remember { Regex("""```aiope-ui\s*\n([\s\S]*?)```""") }
+            val matches = remember(content) { uiPattern.findAll(content).toList() }
+            val mdContent = remember(content) { uiPattern.replace(content, "").trim() }
+            if (mdContent.isNotBlank()) {
+              com.fluid.compose.UniversalMarkdown(content = mdContent, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, alt ->
+                val resolved = if (url.startsWith("/")) "file://${LocalContext.current.filesDir}/pulse$url" else url
+                coil.compose.AsyncImage(
+                  model = coil.request.ImageRequest.Builder(LocalContext.current).data(resolved).crossfade(true).build(),
+                  contentDescription = alt,
+                  modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
+                  contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                )
+              })
             }
-
-            // Render text content (images already stripped)
-            if (textOnly.isNotBlank()) {
-              val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
-              val matches = uiPattern.findAll(textOnly).toList()
-              if (matches.isEmpty()) {
-                com.fluid.compose.UniversalMarkdown(content = textOnly, animateStreaming = false, modifier = Modifier.fillMaxWidth())
-              } else {
-                var lastEnd = 0
-                matches.forEach { match ->
-                  val before = textOnly.substring(lastEnd, match.range.first).trim()
-                  if (before.isNotBlank()) {
-                    com.fluid.compose.UniversalMarkdown(content = before, animateStreaming = false, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(8.dp))
-                  }
-                  val json = match.groupValues[1].trim()
-                  val node = com.xnet.pulse.feature.chat.dynamicui.AiopeUiParser.parse(json)
-                  if (node != null) {
-                    com.xnet.pulse.feature.chat.dynamicui.AiopeUiRenderer(node = node, isInteractive = true, onCallback = { event, data -> })
-                    Spacer(Modifier.height(8.dp))
-                  }
-                  lastEnd = match.range.last + 1
-                }
-                val after = textOnly.substring(lastEnd).trim()
-                if (after.isNotBlank()) {
-                  com.fluid.compose.UniversalMarkdown(content = after, animateStreaming = false, modifier = Modifier.fillMaxWidth())
-                }
+            matches.forEach { match ->
+              val json = match.groupValues[1].trim()
+              val node = com.xnet.pulse.feature.chat.dynamicui.AiopeUiParser.parse(json)
+              if (node != null) {
+                com.xnet.pulse.feature.chat.dynamicui.AiopeUiRenderer(node = node, isInteractive = true, onCallback = { _, _ -> })
+                Spacer(Modifier.height(8.dp))
               }
             }
           }

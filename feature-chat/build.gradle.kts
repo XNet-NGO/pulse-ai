@@ -47,9 +47,8 @@ dependencies {
   implementation(libs.coil.compose)
 
   // UniversalMarkdown (AARs in :app, classes available via transitive)
-  compileOnly(":universal-markdown-compose@aar")
-  compileOnly(":universal-markdown-compose@aar")
-  compileOnly(":markwon-core@aar")
+  compileOnly(files("../app/libs/universal-markdown-compose.aar"))
+  compileOnly(files("../app/libs/markwon-core.aar"))
   implementation("com.atlassian.commonmark:commonmark:0.15.2")
   implementation(libs.androidx.appcompat)
 }
