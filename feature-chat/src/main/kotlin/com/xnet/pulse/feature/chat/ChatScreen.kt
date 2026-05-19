@@ -267,21 +267,37 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
             val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
             val matches = uiPattern.findAll(content).toList()
             if (matches.isEmpty()) {
-              com.fluid.compose.UniversalMarkdown(content = content, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, alt ->
-                coil.compose.AsyncImage(
-                  model = url,
-                  contentDescription = alt,
-                  modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
-                  contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
-                )
+              com.fluid.compose.UniversalMarkdown(content = content, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, _ ->
+                val bmp by produceState<android.graphics.Bitmap?>(null, url) {
+                  value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                      if (url.startsWith("file://")) android.graphics.BitmapFactory.decodeFile(url.removePrefix("file://"))
+                      else java.net.URL(url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+                    } catch (_: Exception) { null }
+                  }
+                }
+                if (bmp != null) {
+                  androidx.compose.ui.viewinterop.AndroidView(factory = { c ->
+                    android.widget.ImageView(c).apply {
+                      scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                      adjustViewBounds = true
+                      setImageBitmap(bmp)
+                      clipToOutline = true
+                      outlineProvider = object : android.view.ViewOutlineProvider() {
+                        override fun getOutline(v: android.view.View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, 24f) }
+                      }
+                    }
+                  }, update = { it.setImageBitmap(bmp) }, modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp))
+                }
               })
             } else {
               var lastEnd = 0
               matches.forEach { match ->
                 val before = content.substring(lastEnd, match.range.first).trim()
                 if (before.isNotBlank()) {
-                  com.fluid.compose.UniversalMarkdown(content = before, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, alt ->
-                    coil.compose.AsyncImage(model = url, contentDescription = alt, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth)
+                  com.fluid.compose.UniversalMarkdown(content = before, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, _ ->
+                    val bmp by produceState<android.graphics.Bitmap?>(null, url) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { try { if (url.startsWith("file://")) android.graphics.BitmapFactory.decodeFile(url.removePrefix("file://")) else java.net.URL(url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) } } catch (_: Exception) { null } } }
+                    if (bmp != null) { androidx.compose.ui.viewinterop.AndroidView(factory = { c -> android.widget.ImageView(c).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER; adjustViewBounds = true; setImageBitmap(bmp) } }, update = { it.setImageBitmap(bmp) }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) }
                   })
                   Spacer(Modifier.height(8.dp))
                 }
@@ -295,8 +311,9 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
               }
               val after = content.substring(lastEnd).trim()
               if (after.isNotBlank()) {
-                com.fluid.compose.UniversalMarkdown(content = after, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, alt ->
-                  coil.compose.AsyncImage(model = url, contentDescription = alt, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth)
+                com.fluid.compose.UniversalMarkdown(content = after, animateStreaming = false, modifier = Modifier.fillMaxWidth(), onImageContent = { url, _ ->
+                  val bmp by produceState<android.graphics.Bitmap?>(null, url) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { try { if (url.startsWith("file://")) android.graphics.BitmapFactory.decodeFile(url.removePrefix("file://")) else java.net.URL(url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) } } catch (_: Exception) { null } } }
+                  if (bmp != null) { androidx.compose.ui.viewinterop.AndroidView(factory = { c -> android.widget.ImageView(c).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER; adjustViewBounds = true; setImageBitmap(bmp) } }, update = { it.setImageBitmap(bmp) }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) }
                 })
               }
             }
