@@ -56,6 +56,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   val scope = rememberCoroutineScope()
   var showDrawer by remember { mutableStateOf(false) }
   var showSettings by remember { mutableStateOf(false) }
+  var showLibrary by remember { mutableStateOf(false) }
   var reportMessageId by remember { mutableStateOf<String?>(null) }
 
   LaunchedEffect(messages.size) {
@@ -76,7 +77,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     ModalBottomSheet(onDismissRequest = { showDrawer = false }) {
       Column(Modifier.padding(16.dp)) {
         TextButton(onClick = { viewModel.newConversation(); showDrawer = false }) { Text("+ New Chat") }
-        TextButton(onClick = { showDrawer = false }) { Text("📁 Library") }
+        TextButton(onClick = { showDrawer = false; showLibrary = true }) { Text("📁 Library") }
         TextButton(onClick = { showDrawer = false; showSettings = true }) { Text("⚙️ Settings") }
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         conversations.forEach { conv ->
@@ -95,6 +96,10 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   // Settings
   if (showSettings) {
     com.xnet.pulse.feature.chat.theme.ThemeSettingsScreen(onBack = { showSettings = false })
+    return
+  }
+  if (showLibrary) {
+    FileLibraryScreen(onDismiss = { showLibrary = false })
     return
   }
 
