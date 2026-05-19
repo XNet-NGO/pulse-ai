@@ -271,13 +271,13 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
             val parts = buildList {
               var lastEnd = 0
               imgPattern.findAll(content).forEach { match ->
-                val before = content.substring(lastEnd, match.range.first)
-                if (before.replace(Regex("""[\s\-*_]+"""), "").isNotBlank()) add(before.trim() to null)
+                val before = content.substring(lastEnd, match.range.first).trim()
+                if (before.replace(Regex("""[\s|*_\-:]+"""), "").isNotBlank()) add(before to null)
                 add(match.groupValues[1] to match.groupValues[2])
                 lastEnd = match.range.last + 1
               }
-              val remaining = content.substring(lastEnd)
-              if (remaining.replace(Regex("""[\s\-*_]+"""), "").isNotBlank()) add(remaining.trim() to null)
+              val remaining = content.substring(lastEnd).trim()
+              if (remaining.replace(Regex("""[\s|*_\-:]+"""), "").isNotBlank()) add(remaining to null)
             }
             val seen = mutableSetOf<String>()
             parts.forEach { (text, url) ->
@@ -293,19 +293,24 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
                   )
                 }
               } else {
-                // Text/markdown
-                val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
-                val uiMatches = uiPattern.findAll(text).toList()
-                val mdText = uiPattern.replace(text, "").trim()
-                if (mdText.isNotBlank()) {
-                  com.fluid.compose.UniversalMarkdown(content = mdText, animateStreaming = false, modifier = Modifier.fillMaxWidth())
-                }
-                uiMatches.forEach { match ->
-                  val json = match.groupValues[1].trim()
-                  val node = com.xnet.pulse.feature.chat.dynamicui.AiopeUiParser.parse(json)
+                // Text/markdown - clean up leftover table fragments
+                val cleaned = text.lines().filter { line ->
+                  line.replace(Regex("""[\s|*_\-:]+"""), "").isNotBlank()
+                }.joinToString("\n").trim()
+                if (cleaned.isNotBlank()) {
+                  val uiPattern = Regex("""```aiope-ui\s*\n([\s\S]*?)```""")
+                  val uiMatches = uiPattern.findAll(cleaned).toList()
+                  val mdText = uiPattern.replace(cleaned, "").trim()
+                  if (mdText.isNotBlank()) {
+                    com.fluid.compose.UniversalMarkdown(content = mdText, animateStreaming = false, modifier = Modifier.fillMaxWidth())
+                  }
+                  uiMatches.forEach { match ->
+                    val json = match.groupValues[1].trim()
+                    val node = com.xnet.pulse.feature.chat.dynamicui.AiopeUiParser.parse(json)
                   if (node != null) {
                     com.xnet.pulse.feature.chat.dynamicui.AiopeUiRenderer(node = node, isInteractive = true, onCallback = { _, _ -> })
                   }
+                }
                 }
               }
             }
