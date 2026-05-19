@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -148,8 +150,11 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     // Compose bar — flush to keyboard, no extra padding
     val ctx = LocalContext.current
     val voiceManager = viewModel.voiceManager
+    val realtimeVoice = viewModel.realtimeVoice
     val isListening by voiceManager.isListening.collectAsState()
     val voiceResult by voiceManager.result.collectAsState()
+    val isInCall by realtimeVoice.isActive.collectAsState()
+    val amplitude by realtimeVoice.amplitude.collectAsState()
     var text by remember { mutableStateOf("") }
 
     // Auto-fill from voice result
@@ -172,6 +177,11 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
           }
         }
       }
+    }
+
+    // Realtime voice waveform
+    if (isInCall) {
+      VoiceWaveform(amplitude = amplitude, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
     }
 
     Row(
@@ -211,6 +221,18 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
           }
         }, enabled = !isStreaming) {
           Icon(if (isListening) Icons.Default.MicOff else Icons.Default.Mic, "Voice", tint = if (isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+        }
+        // Call / Hangup button
+        IconButton(onClick = {
+          if (isInCall) {
+            realtimeVoice.disconnect()
+          } else {
+            if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+              scope.launch { realtimeVoice.connect("REDACTED_KEY").collect {} }
+            }
+          }
+        }) {
+          Icon(if (isInCall) Icons.Default.CallEnd else Icons.Default.Call, if (isInCall) "Hang up" else "Call", tint = if (isInCall) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary)
         }
       } else {
         IconButton(onClick = { viewModel.send(text.trim(), pendingApiImages, pendingImages); text = ""; pendingImages = emptyList(); pendingApiImages = emptyList(); scope.launch { listState.animateScrollToItem(messages.size) } }, enabled = !isStreaming) {
@@ -459,4 +481,24 @@ private fun toolIcon(name: String): String = when (name) {
   "memory_recall" -> "Recall"
   "open_intent" -> "Open"
   else -> name
+}
+
+@Composable
+private fun VoiceWaveform(amplitude: Float, modifier: Modifier = Modifier) {
+  val transition = rememberInfiniteTransition(label = "wave")
+  val offsets = (0..4).map { i ->
+    transition.animateFloat(
+      initialValue = 0.3f, targetValue = 1f,
+      animationSpec = infiniteRepeatable(tween(300 + i * 50, easing = LinearEasing), RepeatMode.Reverse),
+      label = "bar$i",
+    )
+  }
+  val color = MaterialTheme.colorScheme.primary
+  Row(modifier.height(32.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+    offsets.forEach { anim ->
+      val h = (anim.value * amplitude.coerceAtLeast(0.2f) * 28).dp
+      Box(Modifier.width(4.dp).height(h).background(color.copy(alpha = anim.value), RoundedCornerShape(2.dp)))
+      Spacer(Modifier.width(3.dp))
+    }
+  }
 }

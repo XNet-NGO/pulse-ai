@@ -8,6 +8,7 @@ import com.xnet.pulse.feature.chat.db.*
 import com.xnet.pulse.feature.chat.engine.ToolExecutor
 import com.xnet.pulse.feature.chat.engine.DirectoryManager
 import com.xnet.pulse.feature.chat.engine.VoiceManager
+import com.xnet.pulse.feature.chat.engine.RealtimeVoice
 import com.xnet.pulse.feature.chat.engine.AttachmentProcessor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -24,6 +25,7 @@ class ChatViewModel @Inject constructor(
   private val client: com.xnet.pulse.core.network.PollinationsClient,
   private val toolExecutor: ToolExecutor,
   val voiceManager: VoiceManager,
+  val realtimeVoice: RealtimeVoice,
   val attachmentProcessor: AttachmentProcessor,
 ) : ViewModel() {
 
