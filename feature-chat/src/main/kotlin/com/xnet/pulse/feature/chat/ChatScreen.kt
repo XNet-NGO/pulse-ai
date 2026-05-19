@@ -271,34 +271,19 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
             val imageUrls = remember(content) { imgRegex.findAll(content).map { it.groupValues[2] }.toList() }
             val textOnly = remember(content) { imgRegex.replace(content, "").trim() }
 
-            // Render images via AndroidView (stable)
+
+            // Render images via Coil (handles redirects, caching, large images)
             imageUrls.forEach { url ->
               val resolvedUrl = if (url.startsWith("/")) "file://${LocalContext.current.filesDir}/pulse$url" else url
-              val bmp by produceState<android.graphics.Bitmap?>(null, resolvedUrl) {
-                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                  try {
-                    if (resolvedUrl.startsWith("file://")) android.graphics.BitmapFactory.decodeFile(resolvedUrl.removePrefix("file://"))
-                    else {
-                      val req = okhttp3.Request.Builder().url(resolvedUrl).build()
-                      okhttp3.OkHttpClient.Builder().followRedirects(true).connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS).readTimeout(60, java.util.concurrent.TimeUnit.SECONDS).build()
-                        .newCall(req).execute().use { r -> r.body?.byteStream()?.use { android.graphics.BitmapFactory.decodeStream(it) } }
-                    }
-                  } catch (_: Exception) { null }
-                }
-              }
-              if (bmp != null) {
-                androidx.compose.ui.viewinterop.AndroidView(factory = { c ->
-                  android.widget.ImageView(c).apply {
-                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                    adjustViewBounds = true
-                    setImageBitmap(bmp)
-                    clipToOutline = true
-                    outlineProvider = object : android.view.ViewOutlineProvider() {
-                      override fun getOutline(v: android.view.View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, 24f) }
-                    }
-                  }
-                }, update = { it.setImageBitmap(bmp) }, modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp))
-              }
+              coil.compose.AsyncImage(
+                model = coil.request.ImageRequest.Builder(LocalContext.current)
+                  .data(resolvedUrl)
+                  .crossfade(true)
+                  .build(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
+                contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+              )
             }
 
             // Render text content (images already stripped)
