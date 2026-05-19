@@ -45,6 +45,7 @@ dependencies {
   implementation(libs.androidx.worker)
   implementation(libs.hilt.worker)
   implementation(libs.coil.compose)
+  implementation(libs.coil.svg)
 
   // UniversalMarkdown (AARs in :app, classes available via transitive)
   compileOnly(files("../app/libs/universal-markdown-compose.aar"))

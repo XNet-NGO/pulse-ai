@@ -44,6 +44,8 @@ dependencies {
   implementation(project(":core-network"))
   implementation(project(":core-designsystem"))
   implementation(project(":feature-chat"))
+  implementation(libs.coil.compose)
+  implementation(libs.coil.svg)
   implementation(project(":feature-library"))
 
   // UniversalMarkdown AARs
