@@ -69,6 +69,7 @@ class ChatViewModel @Inject constructor(
     )
     _messages.value = _messages.value + userMsg
     viewModelScope.launch {
+      dao.insertConversation(ConversationEntity(id = currentConvId)) // ensure exists
       dao.insertMessage(userMsg.toEntity())
       dao.touchConversation(currentConvId)
       streamResponse()
