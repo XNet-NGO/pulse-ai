@@ -141,7 +141,7 @@ class ChatViewModel @Inject constructor(
     return listOf(system) + trimToContextWindow(msgs)
   }
 
-  private fun trimToContextWindow(msgs: List<JSONObject>, maxTokens: Int = 120_000): List<JSONObject> {
+  private fun trimToContextWindow(msgs: List<JSONObject>, maxTokens: Int = 230_000): List<JSONObject> {
     var total = 0
     val kept = mutableListOf<JSONObject>()
     for (msg in msgs.reversed()) {
