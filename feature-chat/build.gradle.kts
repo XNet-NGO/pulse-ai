@@ -34,6 +34,8 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   ksp(libs.androidx.room.compiler)
   implementation(libs.androidx.datastore)
+  implementation("androidx.media3:media3-exoplayer:1.6.1")
+  implementation("androidx.media3:media3-ui:1.6.1")
   implementation(libs.hilt.android)
   ksp(libs.hilt.compiler)
   implementation(libs.okhttp)

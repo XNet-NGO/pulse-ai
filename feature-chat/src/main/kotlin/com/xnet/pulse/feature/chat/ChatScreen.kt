@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -91,19 +93,21 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 
   // Settings
   if (showSettings) {
-    ModalBottomSheet(onDismissRequest = { showSettings = false }) {
-      SettingsSheet()
-    }
+    com.xnet.pulse.feature.chat.theme.ThemeSettingsScreen(onBack = { showSettings = false })
+    return
   }
 
-  Column(
-    Modifier
-      .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
-      .statusBarsPadding()
-      .navigationBarsPadding()
-      .imePadding()
-  ) {
+  val themeState = com.xnet.pulse.feature.chat.theme.LocalThemeState.current
+
+  Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    com.xnet.pulse.feature.chat.theme.ChatBackground(themeState)
+    Column(
+      Modifier
+        .fillMaxSize()
+        .statusBarsPadding()
+        .navigationBarsPadding()
+        .imePadding()
+    ) {
     // Top bar
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
       IconButton(onClick = { showDrawer = true }) { Icon(Icons.Default.Menu, "Menu") }
@@ -141,12 +145,14 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 
     // File picker
     var pendingImages by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingApiImages by remember { mutableStateOf<List<String>>(emptyList()) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
       uri?.let {
         val attachment = viewModel.attachmentProcessor.process(it)
         if (attachment != null) {
           if (attachment.type == "image") {
-            pendingImages = pendingImages + attachment.content
+            pendingImages = pendingImages + (attachment.displayPath ?: attachment.content)
+            pendingApiImages = pendingApiImages + attachment.content
           } else {
             text = "[File: ${attachment.name}]\n${attachment.content}\n" + text
           }
@@ -171,7 +177,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         enabled = !isStreaming,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
         keyboardActions = KeyboardActions(onSend = {
-          if (text.isNotBlank() || pendingImages.isNotEmpty()) { viewModel.send(text.trim(), pendingImages); text = ""; pendingImages = emptyList(); scope.launch { listState.animateScrollToItem(messages.size) } }
+          if (text.isNotBlank() || pendingImages.isNotEmpty()) { viewModel.send(text.trim(), pendingApiImages, pendingImages); text = ""; pendingImages = emptyList(); pendingApiImages = emptyList(); scope.launch { listState.animateScrollToItem(messages.size) } }
         }),
       )
       Spacer(Modifier.width(2.dp))
@@ -180,12 +186,13 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
           Icon(if (isListening) Icons.Default.MicOff else Icons.Default.Mic, "Voice", tint = if (isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
       } else {
-        IconButton(onClick = { viewModel.send(text.trim(), pendingImages); text = ""; pendingImages = emptyList(); scope.launch { listState.animateScrollToItem(messages.size) } }, enabled = !isStreaming) {
+        IconButton(onClick = { viewModel.send(text.trim(), pendingApiImages, pendingImages); text = ""; pendingImages = emptyList(); pendingApiImages = emptyList(); scope.launch { listState.animateScrollToItem(messages.size) } }, enabled = !isStreaming) {
           Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = MaterialTheme.colorScheme.primary)
         }
       }
     }
-  }
+  } // Column
+  } // Box
 }
 
 @Composable
@@ -201,13 +208,20 @@ private fun MessageBubble(msg: com.xnet.pulse.core.model.ChatMessage, onReport: 
         // Render attached images
         if (msg.imagePaths.isNotEmpty()) {
           msg.imagePaths.filter { it.isNotBlank() }.forEach { path ->
-            val model = remember(path.hashCode()) { path }
-            coil.compose.AsyncImage(
-              model = model,
-              contentDescription = null,
-              modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(bottom = 8.dp),
-              contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-            )
+            val bmp = remember(path) {
+              try {
+                val filePath = if (path.startsWith("file://")) path.removePrefix("file://") else path
+                android.graphics.BitmapFactory.decodeFile(filePath)
+              } catch (_: Exception) { null }
+            }
+            if (bmp != null) {
+              Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(bottom = 8.dp),
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+              )
+            }
           }
         }
         if (msg.reasoning.isNotBlank()) {
@@ -283,9 +297,12 @@ private fun StreamingText(content: String) {
   Column {
     images.forEach { match ->
       val url = match.groupValues[2]
-      val model = remember(url.hashCode()) { url }
       coil.compose.AsyncImage(
-        model = model,
+        model = coil.request.ImageRequest.Builder(LocalContext.current)
+          .data(url)
+          .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+          .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+          .build(),
         contentDescription = match.groupValues[1],
         modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(vertical = 4.dp),
         contentScale = androidx.compose.ui.layout.ContentScale.Fit,

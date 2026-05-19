@@ -59,13 +59,14 @@ class ChatViewModel @Inject constructor(
     viewModelScope.launch { dao.insertConversation(ConversationEntity(id = currentConvId)) }
   }
 
-  fun send(text: String, imagePaths: List<String> = emptyList()) {
+  fun send(text: String, apiImages: List<String> = emptyList(), displayImages: List<String> = emptyList()) {
     val userMsg = ChatMessage(
       id = UUID.randomUUID().toString(),
       conversationId = currentConvId,
       role = Role.USER,
       content = text,
-      imagePaths = imagePaths,
+      imagePaths = displayImages.ifEmpty { apiImages },
+      apiImageData = apiImages,
     )
     _messages.value = _messages.value + userMsg
     viewModelScope.launch {
@@ -117,10 +118,10 @@ class ChatViewModel @Inject constructor(
   private fun buildApiMessages(): List<JSONObject> {
     val system = JSONObject().put("role", "system").put("content", SYSTEM_PROMPT)
     val msgs = _messages.value.filter { it.role != Role.TOOL }.map { msg ->
-      if (msg.imagePaths.isNotEmpty() && msg.role == Role.USER) {
+      if (msg.apiImageData.isNotEmpty() && msg.role == Role.USER) {
         val contentArr = JSONArray()
         if (msg.content.isNotBlank()) contentArr.put(JSONObject().put("type", "text").put("text", msg.content))
-        msg.imagePaths.filter { it.startsWith("data:") }.forEach { b64 ->
+        msg.apiImageData.filter { it.startsWith("data:") }.forEach { b64 ->
           contentArr.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", b64)))
         }
         JSONObject().put("role", "user").put("content", contentArr)
@@ -162,7 +163,7 @@ class ChatViewModel @Inject constructor(
 
   fun deleteConversation(id: String) { viewModelScope.launch { dao.deleteConversation(id) } }
 
-  private fun MessageEntity.toDomain() = ChatMessage(id, conversationId, Role.valueOf(role.uppercase()), content, reasoning, imagePaths.split(",").filter { it.isNotBlank() }, timestamp, MessageStatus.SENT)
+  private fun MessageEntity.toDomain() = ChatMessage(id, conversationId, Role.valueOf(role.uppercase()), content, reasoning, imagePaths.split(",").filter { it.isNotBlank() }, emptyList(), timestamp, MessageStatus.SENT)
   private fun ChatMessage.toEntity() = MessageEntity(id, conversationId, role.name.lowercase(), content, reasoning, imagePaths.joinToString(","), timestamp, status.name.lowercase())
 
   companion object {

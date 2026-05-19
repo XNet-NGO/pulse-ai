@@ -13,7 +13,7 @@ import javax.inject.Singleton
 @Singleton
 class AttachmentProcessor @Inject constructor(@ApplicationContext private val ctx: Context) {
 
-  data class Attachment(val type: String, val content: String, val name: String)
+  data class Attachment(val type: String, val content: String, val name: String, val displayPath: String? = null)
 
   fun process(uri: Uri): Attachment? {
     val mime = ctx.contentResolver.getType(uri) ?: return null
@@ -31,10 +31,16 @@ class AttachmentProcessor @Inject constructor(@ApplicationContext private val ct
     val bitmap = BitmapFactory.decodeStream(input) ?: return null
     input.close()
     val scaled = scaleBitmap(bitmap, 1024)
+    // Save to app files for stable rendering
+    val file = java.io.File(ctx.filesDir, "images/${System.currentTimeMillis()}_$name.jpg")
+    file.parentFile?.mkdirs()
+    file.outputStream().use { scaled.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+    val filePath = "file://${file.absolutePath}"
+    // Also produce base64 for API
     val baos = ByteArrayOutputStream()
     scaled.compress(Bitmap.CompressFormat.JPEG, 85, baos)
     val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
-    return Attachment("image", "data:image/jpeg;base64,$b64", name)
+    return Attachment("image", "data:image/jpeg;base64,$b64", name, filePath)
   }
 
   private fun processText(uri: Uri, name: String): Attachment? {

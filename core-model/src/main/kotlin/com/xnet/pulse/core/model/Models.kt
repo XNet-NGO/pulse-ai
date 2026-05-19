@@ -15,6 +15,7 @@ data class ChatMessage(
   val content: String,
   val reasoning: String = "",
   val imagePaths: List<String> = emptyList(),
+  val apiImageData: List<String> = emptyList(),
   val timestamp: Long = System.currentTimeMillis(),
   val status: MessageStatus = MessageStatus.SENT,
 )
