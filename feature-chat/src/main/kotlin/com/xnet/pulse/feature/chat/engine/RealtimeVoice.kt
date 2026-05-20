@@ -53,7 +53,8 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
   private var connecting = false
 
   companion object {
-    private const val SAMPLE_RATE = 16000
+    private const val SAMPLE_RATE_IN = 16000
+    private const val SAMPLE_RATE_OUT = 24000
     private const val TAG = "RealtimeVoice"
     private const val MODEL = "gemini-3.1-flash-live-preview"
     private const val SYSTEM_PROMPT = "You are a helpful voice assistant. Be concise and conversational."
@@ -215,11 +216,11 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
   }.flowOn(Dispatchers.IO)
 
   private fun startCapture(ws: WebSocket) {
-    val bufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+    val bufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE_IN, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
     if (bufSize <= 0) return
 
     audioRecord = AudioRecord(
-      MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE,
+      MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE_IN,
       AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize * 2
     )
     if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) { audioRecord?.release(); audioRecord = null; return }
@@ -241,7 +242,7 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
           _amplitude.value = (kotlin.math.sqrt((sum / (read / 2)).toDouble()) / 32768.0).toFloat().coerceIn(0f, 1f)
           // Send as Google Live API format
           val b64 = Base64.encodeToString(chunk, Base64.NO_WRAP)
-          val msg = """{"realtimeInput":{"audio":{"data":"$b64","mimeType":"audio/pcm;rate=$SAMPLE_RATE"}}}"""
+          val msg = """{"realtimeInput":{"audio":{"data":"$b64","mimeType":"audio/pcm;rate=$SAMPLE_RATE_IN"}}}"""
           ws.send(msg)
         }
       }
@@ -249,19 +250,25 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
   }
 
   private fun startPlayback() {
-    val bufSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+    val bufSize = AudioTrack.getMinBufferSize(SAMPLE_RATE_OUT, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
     audioTrack = AudioTrack.Builder()
       .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-      .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(SAMPLE_RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+      .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(SAMPLE_RATE_OUT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
       .setBufferSizeInBytes(bufSize * 2)
       .setTransferMode(AudioTrack.MODE_STREAM)
       .build()
     audioTrack?.play()
   }
 
+  private val playbackLock = Any()
+
   private fun playAudio(pcm: ByteArray) {
-    if (audioTrack?.state == AudioTrack.STATE_INITIALIZED) {
-      scope.launch { audioTrack?.write(pcm, 0, pcm.size) }
+    synchronized(playbackLock) {
+      val track = audioTrack ?: return
+      if (track.state != AudioTrack.STATE_INITIALIZED) return
+      try {
+        track.write(pcm, 0, pcm.size)
+      } catch (_: Exception) {}
     }
   }
 
@@ -290,9 +297,11 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
     audioRecord?.stop()
     audioRecord?.release()
     audioRecord = null
-    audioTrack?.stop()
-    audioTrack?.release()
-    audioTrack = null
+    synchronized(playbackLock) {
+      audioTrack?.stop()
+      audioTrack?.release()
+      audioTrack = null
+    }
     webSocket?.close(1000, "Done")
     webSocket = null
     _amplitude.value = 0f
