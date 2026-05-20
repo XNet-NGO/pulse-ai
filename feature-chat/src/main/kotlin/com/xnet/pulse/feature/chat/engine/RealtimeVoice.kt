@@ -6,16 +6,14 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.util.Base64
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
+import okhttp3.*
 import okio.ByteString
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -27,22 +25,24 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
   sealed class Event {
     data class TextDelta(val text: String) : Event()
     data class AudioChunk(val pcm: ByteArray) : Event()
+    data class InputTranscription(val text: String) : Event()
+    data class OutputTranscription(val text: String) : Event()
     data object TurnComplete : Event()
     data class Error(val msg: String) : Event()
     data object Connected : Event()
     data object Disconnected : Event()
   }
 
-  private val client = OkHttpClient.Builder()
-    .connectTimeout(10, TimeUnit.SECONDS)
-    .readTimeout(0, TimeUnit.SECONDS)
-    .writeTimeout(10, TimeUnit.SECONDS)
+  private val http = OkHttpClient.Builder()
+    .readTimeout(0, TimeUnit.MILLISECONDS)
+    .pingInterval(30, TimeUnit.SECONDS)
     .build()
 
   private var webSocket: WebSocket? = null
   private var audioRecord: AudioRecord? = null
   private var audioTrack: AudioTrack? = null
   private var captureJob: Job? = null
+  private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
   private val _isActive = MutableStateFlow(false)
   val isActive: StateFlow<Boolean> = _isActive
@@ -50,63 +50,132 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
   private val _amplitude = MutableStateFlow(0f)
   val amplitude: StateFlow<Float> = _amplitude
 
-  private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
   companion object {
     private const val SAMPLE_RATE = 16000
-    private const val WS_URL = "wss://inf.xnet.ngo/ws/voice"
+    private const val TAG = "RealtimeVoice"
+    private const val MODEL = "gemini-2.5-flash-preview-native-audio-dialog"
+    private const val SYSTEM_PROMPT = "You are a helpful voice assistant. Be concise and conversational."
   }
 
-  fun connect(apiKey: String, model: String = "mistral-4"): Flow<Event> = callbackFlow {
-    val url = "$WS_URL?model=$model"
-    android.util.Log.i("RealtimeVoice", "Connecting to $url")
-    val request = Request.Builder()
-      .url(url)
-      .addHeader("Authorization", "Bearer $apiKey")
-      .build()
+  fun connect(apiKey: String): Flow<Event> = callbackFlow {
+    val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=$apiKey"
+    android.util.Log.i(TAG, "Connecting to Gemini Live API")
 
-    webSocket = client.newWebSocket(request, object : WebSocketListener() {
+    val request = Request.Builder().url(url).build()
+
+    webSocket = http.newWebSocket(request, object : WebSocketListener() {
       override fun onOpen(ws: WebSocket, response: Response) {
-        android.util.Log.i("RealtimeVoice", "Connected: ${response.code}")
-        trySend(Event.Connected)
-        _isActive.value = true
-        startCapture(ws)
+        android.util.Log.i(TAG, "WebSocket open, sending setup")
+        // Send setup message
+        val setup = JSONObject().apply {
+          put("setup", JSONObject().apply {
+            put("model", "models/$MODEL")
+            put("generationConfig", JSONObject().apply {
+              put("responseModalities", JSONArray().apply { put("AUDIO") })
+              put("speechConfig", JSONObject().apply {
+                put("voiceConfig", JSONObject().apply {
+                  put("prebuiltVoiceConfig", JSONObject().apply {
+                    put("voiceName", "Aoede")
+                  })
+                })
+              })
+            })
+            put("systemInstruction", JSONObject().apply {
+              put("parts", JSONArray().apply {
+                put(JSONObject().apply { put("text", SYSTEM_PROMPT) })
+              })
+            })
+          })
+        }
+        ws.send(setup.toString())
       }
 
       override fun onMessage(ws: WebSocket, text: String) {
         try {
           val json = JSONObject(text)
-          json.optJSONObject("text")?.optString("delta")?.let {
-            if (it.isNotBlank()) trySend(Event.TextDelta(it))
+
+          // Setup complete
+          if (json.has("setupComplete")) {
+            android.util.Log.i(TAG, "Setup complete, starting capture")
+            trySend(Event.Connected)
+            _isActive.value = true
+            startCapture(ws)
+            startPlayback()
+            return
           }
-          json.optJSONObject("audio")?.optString("pcm")?.let { b64 ->
-            if (b64.isNotBlank()) {
-              val pcm = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-              playAudio(pcm)
-              trySend(Event.AudioChunk(pcm))
+
+          // Server content
+          val sc = json.optJSONObject("serverContent")
+          if (sc != null) {
+            // Model turn - audio/text parts
+            sc.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
+              for (i in 0 until parts.length()) {
+                val part = parts.getJSONObject(i)
+                // Audio
+                part.optJSONObject("inlineData")?.let { inline ->
+                  val data = inline.optString("data", "")
+                  if (data.isNotBlank()) {
+                    val pcm = Base64.decode(data, Base64.DEFAULT)
+                    playAudio(pcm)
+                    trySend(Event.AudioChunk(pcm))
+                  }
+                }
+                // Text
+                val t = part.optString("text", "")
+                if (t.isNotBlank()) trySend(Event.TextDelta(t))
+              }
+            }
+            // Transcriptions
+            sc.optJSONObject("inputTranscription")?.optString("text")?.let {
+              if (it.isNotBlank()) trySend(Event.InputTranscription(it))
+            }
+            sc.optJSONObject("outputTranscription")?.optString("text")?.let {
+              if (it.isNotBlank()) trySend(Event.OutputTranscription(it))
+            }
+            // Turn complete
+            if (sc.optBoolean("turnComplete", false)) {
+              trySend(Event.TurnComplete)
             }
           }
-          if (json.has("turnComplete")) trySend(Event.TurnComplete)
-          if (json.has("error")) trySend(Event.Error(json.optString("error")))
         } catch (e: Exception) {
-          trySend(Event.Error("Parse: ${e.message}"))
+          android.util.Log.e(TAG, "Parse error: ${e.message}")
         }
       }
 
       override fun onMessage(ws: WebSocket, bytes: ByteString) {
-        val pcm = bytes.toByteArray()
-        playAudio(pcm)
-        trySend(Event.AudioChunk(pcm))
+        // Binary frame - try parsing as JSON (Google sends binary UTF-8)
+        try {
+          val text = bytes.utf8()
+          val json = JSONObject(text)
+          val sc = json.optJSONObject("serverContent")
+          sc?.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
+            for (i in 0 until parts.length()) {
+              parts.getJSONObject(i).optJSONObject("inlineData")?.optString("data")?.let { data ->
+                if (data.isNotBlank()) {
+                  val pcm = Base64.decode(data, Base64.DEFAULT)
+                  playAudio(pcm)
+                  trySend(Event.AudioChunk(pcm))
+                }
+              }
+            }
+          }
+        } catch (_: Exception) {
+          // Raw binary audio
+          val pcm = bytes.toByteArray()
+          playAudio(pcm)
+          trySend(Event.AudioChunk(pcm))
+        }
       }
 
       override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-        android.util.Log.e("RealtimeVoice", "Failed: ${t.message}", t)
+        android.util.Log.e(TAG, "Failed: ${t.message}", t)
         trySend(Event.Error(t.message ?: "Connection failed"))
         _isActive.value = false
         close()
       }
 
       override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+        android.util.Log.i(TAG, "Closed: $code $reason")
         trySend(Event.Disconnected)
         _isActive.value = false
         close()
@@ -125,7 +194,6 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
       AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize * 2
     )
     if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) { audioRecord?.release(); audioRecord = null; return }
-
     audioRecord?.startRecording()
 
     captureJob = scope.launch {
@@ -134,7 +202,7 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
         val read = audioRecord?.read(buf, 0, buf.size) ?: 0
         if (read > 0) {
           val chunk = buf.copyOf(read)
-          // Amplitude for visualization
+          // Amplitude
           var sum = 0L
           for (i in 0 until read step 2) {
             val s = (buf[i].toInt() and 0xFF) or ((buf.getOrNull(i + 1)?.toInt() ?: 0) shl 8)
@@ -142,15 +210,13 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
             sum += (signed.toLong() * signed.toLong())
           }
           _amplitude.value = (kotlin.math.sqrt((sum / (read / 2)).toDouble()) / 32768.0).toFloat().coerceIn(0f, 1f)
-          // Send
-          val b64 = android.util.Base64.encodeToString(chunk, android.util.Base64.NO_WRAP)
-          ws.send("""{"audio":{"pcm":"$b64","sampleRate":$SAMPLE_RATE}}""")
+          // Send as Google Live API format
+          val b64 = Base64.encodeToString(chunk, Base64.NO_WRAP)
+          val msg = """{"realtimeInput":{"audio":{"data":"$b64","mimeType":"audio/pcm;rate=$SAMPLE_RATE"}}}"""
+          ws.send(msg)
         }
       }
     }
-
-    // Start playback track
-    startPlayback()
   }
 
   private fun startPlayback() {
@@ -171,16 +237,26 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
   }
 
   fun sendText(text: String) {
-    webSocket?.send("""{"text":{"content":"$text"}}""")
-  }
-
-  fun endTurn() {
-    webSocket?.send("""{"turnEnd":true}""")
+    val msg = JSONObject().apply {
+      put("clientContent", JSONObject().apply {
+        put("turns", JSONArray().apply {
+          put(JSONObject().apply {
+            put("role", "user")
+            put("parts", JSONArray().apply {
+              put(JSONObject().apply { put("text", text) })
+            })
+          })
+        })
+        put("turnComplete", true)
+      })
+    }
+    webSocket?.send(msg.toString())
   }
 
   fun disconnect() {
     _isActive.value = false
     captureJob?.cancel()
+    captureJob = null
     audioRecord?.stop()
     audioRecord?.release()
     audioRecord = null
