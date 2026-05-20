@@ -37,6 +37,7 @@ class ToolExecutor @Inject constructor(
     ToolDef("list_directory", "List directory contents.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
     ToolDef("read_file", "Read file contents.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
     ToolDef("write_file", "Write content to a file.", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""", false),
+    ToolDef("edit_file", "Edit a file by replacing text. Use read_file first to see current content.", """{"type":"object","properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"}},"required":["path","old","new"]}""", false),
     ToolDef("get_location", "Get device GPS location.", """{"type":"object","properties":{}}""", true),
     ToolDef("open_intent", "Open a URL, map, or app.", """{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}""", false),
     ToolDef("image_generate", "Generate an image from a text prompt.", """{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"]}""", true),
@@ -52,6 +53,7 @@ class ToolExecutor @Inject constructor(
     "list_directory" -> listDirectory(args["path"]?.toString() ?: "/")
     "read_file" -> readFile(args["path"]?.toString() ?: "")
     "write_file" -> writeFile(args["path"]?.toString() ?: "", args["content"]?.toString() ?: "")
+    "edit_file" -> editFile(args["path"]?.toString() ?: "", args["old"]?.toString() ?: "", args["new"]?.toString() ?: "")
     "get_location" -> getLocation()
     "open_intent" -> openIntent(args["uri"]?.toString() ?: "")
     "image_generate" -> imageGenerate(args["prompt"]?.toString() ?: "")
@@ -118,7 +120,6 @@ class ToolExecutor @Inject constructor(
     return when (ext) {
       "png", "jpg", "jpeg", "gif", "webp" -> "Written ${file.name}\n![${file.name}]($filePath)"
       "svg" -> {
-        // Rasterize SVG for inline display
         try {
           val raster = com.xnet.pulse.feature.chat.engine.AttachmentProcessor(ctx).normalizeForVision(file.readBytes(), file.name)
           val rasterFile = File(file.parent, "${file.nameWithoutExtension}.jpg")
@@ -126,8 +127,30 @@ class ToolExecutor @Inject constructor(
           "Written ${file.name}\n![${file.name}](file://${rasterFile.absolutePath})"
         } catch (_: Exception) { "Written ${file.name}\n![${file.name}]($filePath)" }
       }
-      else -> "Written ${content.length} chars to ${file.name}\n📄 [$filePath]"
+      "html" -> "Written ${file.name}\n\n```html\n${content.take(2000)}\n```\n\n📄 [Open ${file.name}]($filePath)"
+      "md" -> "Written ${file.name}\n\n---\n${content.take(3000)}\n---"
+      "txt" -> "Written ${file.name}\n\n${content.take(3000)}"
+      else -> {
+        val lang = when (ext) {
+          "kt", "kts" -> "kotlin"; "py" -> "python"; "js" -> "javascript"; "ts" -> "typescript"
+          "java" -> "java"; "go" -> "go"; "rs" -> "rust"; "sh" -> "bash"; "json" -> "json"
+          "yaml", "yml" -> "yaml"; "xml" -> "xml"; "css" -> "css"; "sql" -> "sql"
+          "latex", "tex" -> "latex"; "csv" -> "csv"
+          else -> ext
+        }
+        "Written ${file.name}\n\n```$lang\n${content.take(3000)}\n```"
+      }
     }
+  }
+
+  private fun editFile(path: String, old: String, new: String): String {
+    val file = File(DirectoryManager.workspace(conversationId), path.removePrefix("/"))
+    if (!file.exists()) return "File not found: $path"
+    val content = file.readText()
+    if (!content.contains(old)) return "Text not found in $path"
+    val updated = content.replaceFirst(old, new)
+    file.writeText(updated)
+    return "Edited ${file.name} (${old.length} chars → ${new.length} chars)"
   }
 
   private fun getLocation(): String {
