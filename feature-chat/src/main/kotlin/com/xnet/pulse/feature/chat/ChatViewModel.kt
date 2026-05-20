@@ -189,6 +189,14 @@ class ChatViewModel @Inject constructor(
 
   fun deleteConversation(id: String) { viewModelScope.launch { dao.deleteConversation(id); DirectoryManager.deleteConversation(id) } }
 
+  fun startCall() {
+    viewModelScope.launch {
+      realtimeVoice.connect("REDACTED_KEY").collect { /* events handled internally */ }
+    }
+  }
+
+  fun endCall() { realtimeVoice.disconnect() }
+
   private fun MessageEntity.toDomain() = ChatMessage(id, conversationId, Role.valueOf(role.uppercase()), content, reasoning, emptyList(), imagePaths.split(",").filter { it.isNotBlank() }, emptyList(), timestamp, MessageStatus.SENT)
   private fun ChatMessage.toEntity() = MessageEntity(id, conversationId, role.name.lowercase(), content, reasoning, imagePaths.joinToString(","), timestamp, status.name.lowercase())
 

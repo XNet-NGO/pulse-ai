@@ -205,6 +205,23 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         }),
       )
       Spacer(Modifier.width(2.dp))
+      // Call / Hangup button (always visible)
+      val callPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.startCall()
+      }
+      IconButton(onClick = {
+        if (isInCall) {
+          viewModel.endCall()
+        } else {
+          if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            viewModel.startCall()
+          } else {
+            callPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+          }
+        }
+      }) {
+        Icon(if (isInCall) Icons.Default.CallEnd else Icons.Default.Call, if (isInCall) "Hang up" else "Call", tint = if (isInCall) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary)
+      }
       if (text.isBlank()) {
         // Mic button with permission request
         val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -221,18 +238,6 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
           }
         }, enabled = !isStreaming) {
           Icon(if (isListening) Icons.Default.MicOff else Icons.Default.Mic, "Voice", tint = if (isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-        }
-        // Call / Hangup button
-        IconButton(onClick = {
-          if (isInCall) {
-            realtimeVoice.disconnect()
-          } else {
-            if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-              scope.launch { realtimeVoice.connect("REDACTED_KEY").collect {} }
-            }
-          }
-        }) {
-          Icon(if (isInCall) Icons.Default.CallEnd else Icons.Default.Call, if (isInCall) "Hang up" else "Call", tint = if (isInCall) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary)
         }
       } else {
         IconButton(onClick = { viewModel.send(text.trim(), pendingApiImages, pendingImages); text = ""; pendingImages = emptyList(); pendingApiImages = emptyList(); scope.launch { listState.animateScrollToItem(messages.size) } }, enabled = !isStreaming) {

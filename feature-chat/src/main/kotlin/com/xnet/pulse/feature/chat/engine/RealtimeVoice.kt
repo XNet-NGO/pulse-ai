@@ -58,13 +58,16 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
   }
 
   fun connect(apiKey: String, model: String = "mistral-4"): Flow<Event> = callbackFlow {
+    val url = "$WS_URL?model=$model"
+    android.util.Log.i("RealtimeVoice", "Connecting to $url")
     val request = Request.Builder()
-      .url("$WS_URL?model=$model")
+      .url(url)
       .addHeader("Authorization", "Bearer $apiKey")
       .build()
 
     webSocket = client.newWebSocket(request, object : WebSocketListener() {
       override fun onOpen(ws: WebSocket, response: Response) {
+        android.util.Log.i("RealtimeVoice", "Connected: ${response.code}")
         trySend(Event.Connected)
         _isActive.value = true
         startCapture(ws)
@@ -97,6 +100,7 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
       }
 
       override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+        android.util.Log.e("RealtimeVoice", "Failed: ${t.message}", t)
         trySend(Event.Error(t.message ?: "Connection failed"))
         _isActive.value = false
         close()
