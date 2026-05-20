@@ -40,6 +40,7 @@ class ToolExecutor @Inject constructor(
     ToolDef("get_location", "Get device GPS location.", """{"type":"object","properties":{}}""", true),
     ToolDef("open_intent", "Open a URL, map, or app.", """{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}""", false),
     ToolDef("image_generate", "Generate an image from a text prompt.", """{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"]}""", true),
+    ToolDef("save_image", "Download an image from URL and save locally for display in chat.", """{"type":"object","properties":{"url":{"type":"string"},"filename":{"type":"string"}},"required":["url"]}""", true),
     ToolDef("memory_store", "Remember a fact across conversations.", """{"type":"object","properties":{"key":{"type":"string"},"content":{"type":"string"},"category":{"type":"string"}},"required":["key","content"]}""", true),
     ToolDef("memory_recall", "Search memory. Empty query lists all.", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""", true),
   )
@@ -54,6 +55,7 @@ class ToolExecutor @Inject constructor(
     "get_location" -> getLocation()
     "open_intent" -> openIntent(args["uri"]?.toString() ?: "")
     "image_generate" -> imageGenerate(args["prompt"]?.toString() ?: "")
+    "save_image" -> saveImage(args["url"]?.toString() ?: "", args["filename"]?.toString() ?: "")
     "memory_store" -> memoryStore(args["key"]?.toString() ?: "", args["content"]?.toString() ?: "", args["category"]?.toString() ?: "general")
     "memory_recall" -> memoryRecall(args["query"]?.toString() ?: "")
     else -> "Unknown tool: $name"
@@ -168,6 +170,18 @@ class ToolExecutor @Inject constructor(
       }
     }
     return "![Generated image](file://${file.absolutePath})"
+  }
+
+  private suspend fun saveImage(url: String, filename: String): String = withContext(Dispatchers.IO) {
+    val name = filename.ifBlank { "img_${System.currentTimeMillis()}.${url.substringAfterLast('.').take(4).ifBlank { "png" }}" }
+    val file = File(DirectoryManager.generated(conversationId), name)
+    try {
+      val req = Request.Builder().url(url).build()
+      http.newCall(req).execute().use { resp ->
+        resp.body?.byteStream()?.use { input -> file.outputStream().use { input.copyTo(it) } }
+      }
+      "![${name}](file://${file.absolutePath})"
+    } catch (e: Exception) { "Error saving image: ${e.message}" }
   }
 
   private suspend fun memoryStore(key: String, content: String, category: String): String {

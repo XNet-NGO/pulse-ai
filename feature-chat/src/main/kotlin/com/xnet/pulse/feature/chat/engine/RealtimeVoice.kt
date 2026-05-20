@@ -333,6 +333,7 @@ Tool Guidance:
     tool("get_location", "Get device GPS location", """{"type":"object","properties":{}}""")
     tool("open_intent", "Open a URL, map, or app on the device", """{"type":"object","properties":{"uri":{"type":"string","description":"URI to open"}},"required":["uri"]}""")
     tool("image_generate", "Generate an image from a text prompt", """{"type":"object","properties":{"prompt":{"type":"string","description":"Image generation prompt"}},"required":["prompt"]}""")
+    tool("save_image", "Download an image from URL and save locally for display in chat", """{"type":"object","properties":{"url":{"type":"string","description":"Image URL to download"},"filename":{"type":"string","description":"Optional filename"}},"required":["url"]}""")
     tool("memory_store", "Remember a fact across conversations", """{"type":"object","properties":{"key":{"type":"string","description":"Short key"},"content":{"type":"string","description":"Fact to remember"},"category":{"type":"string","description":"Category"}},"required":["key","content"]}""")
     tool("memory_recall", "Search stored memories", """{"type":"object","properties":{"query":{"type":"string","description":"Search term"}},"required":["query"]}""")
     return decls
