@@ -204,6 +204,7 @@ class ChatViewModel @Inject constructor(
   fun startCall() {
     if (realtimeVoice.isActive.value) return
     android.util.Log.i("RealtimeVoice", "startCall() invoked")
+    toolExecutor.conversationId = currentConvId
     viewModelScope.launch {
       var currentInputId: String? = null
       var currentOutputId: String? = null
@@ -246,6 +247,22 @@ class ChatViewModel @Inject constructor(
               _messages.value = _messages.value.map { if (it.id == id) final else it }
               viewModelScope.launch { dao.insertMessage(final.toEntity()) }
               currentOutputId = null
+            }
+          }
+          is RealtimeVoice.Event.ToolCall -> {
+            _status.value = toolStatusLabel(event.name)
+          }
+          is RealtimeVoice.Event.ToolResult -> {
+            _status.value = null
+            // Render images/content from tool results in chat
+            if (event.result.contains("![")) {
+              if (currentOutputId == null) {
+                currentOutputId = java.util.UUID.randomUUID().toString()
+                outputBuf.clear()
+              }
+              outputBuf.append("\n").append(event.result)
+              val msg = ChatMessage(id = currentOutputId!!, conversationId = currentConvId, role = Role.ASSISTANT, content = outputBuf.toString(), timestamp = System.currentTimeMillis(), status = MessageStatus.STREAMING)
+              _messages.value = _messages.value.filter { it.id != currentOutputId } + msg
             }
           }
           else -> {}

@@ -33,6 +33,7 @@ class RealtimeVoice @Inject constructor(
     data class InputTranscription(val text: String) : Event()
     data class OutputTranscription(val text: String) : Event()
     data class ToolCall(val name: String, val id: String, val args: JSONObject) : Event()
+    data class ToolResult(val name: String, val result: String) : Event()
     data object TurnComplete : Event()
     data class Error(val msg: String) : Event()
     data object Connected : Event()
@@ -149,6 +150,7 @@ Tool Guidance:
                 args.keys().forEach { k -> argsMap[k] = args.opt(k) }
                 val result = try { toolExecutor.execute(name, argsMap) } catch (e: Exception) { "Error: ${e.message}" }
                 android.util.Log.i(TAG, "Tool result: ${result.take(100)}")
+                trySend(Event.ToolResult(name, result))
                 sendToolResponse(id, name, result)
               }
             }
