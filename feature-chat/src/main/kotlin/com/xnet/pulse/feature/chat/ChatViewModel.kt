@@ -205,20 +205,48 @@ class ChatViewModel @Inject constructor(
     if (realtimeVoice.isActive.value) return
     android.util.Log.i("RealtimeVoice", "startCall() invoked")
     viewModelScope.launch {
+      var currentInputId: String? = null
+      var currentOutputId: String? = null
+      val inputBuf = StringBuilder()
+      val outputBuf = StringBuilder()
+
       realtimeVoice.connect(GOOGLE_AI_KEY).collect { event ->
         when (event) {
           is RealtimeVoice.Event.Error -> android.util.Log.e("RealtimeVoice", "Event: ${event.msg}")
           is RealtimeVoice.Event.Connected -> android.util.Log.i("RealtimeVoice", "Connected!")
           is RealtimeVoice.Event.Disconnected -> android.util.Log.i("RealtimeVoice", "Disconnected")
           is RealtimeVoice.Event.InputTranscription -> {
-            val msg = ChatMessage(id = java.util.UUID.randomUUID().toString(), conversationId = currentConvId, role = Role.USER, content = event.text, timestamp = System.currentTimeMillis(), status = MessageStatus.SENT)
-            _messages.value = _messages.value + msg
-            viewModelScope.launch { dao.insertMessage(msg.toEntity()) }
+            if (currentInputId == null) {
+              currentInputId = java.util.UUID.randomUUID().toString()
+              inputBuf.clear()
+            }
+            inputBuf.append(event.text)
+            val msg = ChatMessage(id = currentInputId!!, conversationId = currentConvId, role = Role.USER, content = inputBuf.toString(), timestamp = System.currentTimeMillis(), status = MessageStatus.STREAMING)
+            _messages.value = _messages.value.filter { it.id != currentInputId } + msg
           }
           is RealtimeVoice.Event.OutputTranscription -> {
-            val msg = ChatMessage(id = java.util.UUID.randomUUID().toString(), conversationId = currentConvId, role = Role.ASSISTANT, content = event.text, timestamp = System.currentTimeMillis(), status = MessageStatus.SENT)
-            _messages.value = _messages.value + msg
-            viewModelScope.launch { dao.insertMessage(msg.toEntity()) }
+            if (currentOutputId == null) {
+              currentOutputId = java.util.UUID.randomUUID().toString()
+              outputBuf.clear()
+            }
+            outputBuf.append(event.text)
+            val msg = ChatMessage(id = currentOutputId!!, conversationId = currentConvId, role = Role.ASSISTANT, content = outputBuf.toString(), timestamp = System.currentTimeMillis(), status = MessageStatus.STREAMING)
+            _messages.value = _messages.value.filter { it.id != currentOutputId } + msg
+          }
+          is RealtimeVoice.Event.TurnComplete -> {
+            // Finalize current messages
+            currentInputId?.let { id ->
+              val final = ChatMessage(id = id, conversationId = currentConvId, role = Role.USER, content = inputBuf.toString(), timestamp = System.currentTimeMillis(), status = MessageStatus.SENT)
+              _messages.value = _messages.value.map { if (it.id == id) final else it }
+              viewModelScope.launch { dao.insertMessage(final.toEntity()) }
+              currentInputId = null
+            }
+            currentOutputId?.let { id ->
+              val final = ChatMessage(id = id, conversationId = currentConvId, role = Role.ASSISTANT, content = outputBuf.toString(), timestamp = System.currentTimeMillis(), status = MessageStatus.SENT)
+              _messages.value = _messages.value.map { if (it.id == id) final else it }
+              viewModelScope.launch { dao.insertMessage(final.toEntity()) }
+              currentOutputId = null
+            }
           }
           else -> {}
         }
