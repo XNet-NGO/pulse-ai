@@ -47,6 +47,9 @@ dependencies {
   implementation(libs.coil.compose)
   implementation(libs.coil.svg)
   implementation("com.caverock:androidsvg-aar:1.4")
+  implementation(libs.pdfbox.android)
+  implementation(libs.poi.ooxml)
+  implementation(libs.opencsv)
 
   // UniversalMarkdown (AARs in :app, classes available via transitive)
   compileOnly(files("../app/libs/universal-markdown-compose.aar"))

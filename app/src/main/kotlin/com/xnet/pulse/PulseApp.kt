@@ -11,6 +11,7 @@ class PulseApp : Application(), ImageLoaderFactory {
   override fun onCreate() {
     super.onCreate()
     com.xnet.pulse.feature.chat.engine.DirectoryManager.init(this)
+    com.xnet.pulse.feature.chat.engine.DocumentConverter.init(this)
   }
   override fun newImageLoader() = ImageLoader.Builder(this)
     .okHttpClient {

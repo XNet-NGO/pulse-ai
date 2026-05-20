@@ -38,6 +38,7 @@ class ToolExecutor @Inject constructor(
     ToolDef("read_file", "Read file contents.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
     ToolDef("write_file", "Write content to a file.", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""", false),
     ToolDef("edit_file", "Edit a file by replacing text. Use read_file first to see current content.", """{"type":"object","properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"}},"required":["path","old","new"]}""", false),
+    ToolDef("export_document", "Export a file to office format: docx, pdf, xlsx, csv. Can convert between formats.", """{"type":"object","properties":{"path":{"type":"string"},"format":{"type":"string"}},"required":["path","format"]}""", true),
     ToolDef("get_location", "Get device GPS location.", """{"type":"object","properties":{}}""", true),
     ToolDef("open_intent", "Open a URL, map, or app.", """{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}""", false),
     ToolDef("image_generate", "Generate an image from a text prompt.", """{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"]}""", true),
@@ -54,6 +55,7 @@ class ToolExecutor @Inject constructor(
     "read_file" -> readFile(args["path"]?.toString() ?: "")
     "write_file" -> writeFile(args["path"]?.toString() ?: "", args["content"]?.toString() ?: "")
     "edit_file" -> editFile(args["path"]?.toString() ?: "", args["old"]?.toString() ?: "", args["new"]?.toString() ?: "")
+    "export_document" -> exportDocument(args["path"]?.toString() ?: "", args["format"]?.toString() ?: "pdf")
     "get_location" -> getLocation()
     "open_intent" -> openIntent(args["uri"]?.toString() ?: "")
     "image_generate" -> imageGenerate(args["prompt"]?.toString() ?: "")
@@ -107,7 +109,13 @@ class ToolExecutor @Inject constructor(
   private fun readFile(path: String): String {
     val file = File(DirectoryManager.workspace(conversationId), path.removePrefix("/"))
     if (!file.exists()) return "File not found: $path"
-    return file.readText().take(50000)
+    return when (file.extension.lowercase()) {
+      "docx" -> DocumentConverter.readDocx(file)
+      "xlsx", "xls" -> DocumentConverter.readXlsx(file)
+      "pdf" -> DocumentConverter.readPdf(file)
+      "csv" -> DocumentConverter.readCsv(file)
+      else -> file.readText().take(50000)
+    }
   }
 
   private fun writeFile(path: String, content: String): String {
@@ -151,6 +159,31 @@ class ToolExecutor @Inject constructor(
     val updated = content.replaceFirst(old, new)
     file.writeText(updated)
     return "Edited ${file.name} (${old.length} chars → ${new.length} chars)"
+  }
+
+  private fun exportDocument(path: String, format: String): String {
+    val workspace = DirectoryManager.workspace(conversationId)
+    val source = File(workspace, path.removePrefix("/"))
+    if (!source.exists()) return "File not found: $path"
+    val content = when (source.extension.lowercase()) {
+      "docx" -> DocumentConverter.readDocx(source)
+      "xlsx", "xls" -> DocumentConverter.readXlsx(source)
+      "pdf" -> DocumentConverter.readPdf(source)
+      "csv" -> DocumentConverter.readCsv(source)
+      else -> source.readText()
+    }
+    val outName = "${source.nameWithoutExtension}.$format"
+    val output = File(workspace, outName)
+    try {
+      when (format.lowercase()) {
+        "docx" -> DocumentConverter.toDocx(content, output)
+        "pdf" -> DocumentConverter.toPdf(content, output)
+        "xlsx" -> DocumentConverter.toXlsx(content, output)
+        "csv" -> DocumentConverter.toCsv(content, output)
+        else -> return "Unsupported format: $format. Use: docx, pdf, xlsx, csv"
+      }
+    } catch (e: Exception) { return "Export failed: ${e.message}" }
+    return "Exported to ${output.name} (${output.length() / 1024}KB)\n📄 file://${output.absolutePath}"
   }
 
   private fun getLocation(): String {

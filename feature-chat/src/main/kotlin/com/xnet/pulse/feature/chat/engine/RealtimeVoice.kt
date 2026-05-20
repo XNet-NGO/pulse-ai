@@ -331,6 +331,7 @@ Tool Guidance:
     tool("read_file", "Read file contents", """{"type":"object","properties":{"path":{"type":"string","description":"File path"}},"required":["path"]}""")
     tool("write_file", "Write content to a file", """{"type":"object","properties":{"path":{"type":"string","description":"File path"},"content":{"type":"string","description":"File content"}},"required":["path","content"]}""")
     tool("edit_file", "Edit a file by replacing text", """{"type":"object","properties":{"path":{"type":"string","description":"File path"},"old":{"type":"string","description":"Text to find"},"new":{"type":"string","description":"Replacement text"}},"required":["path","old","new"]}""")
+    tool("export_document", "Export a file to office format: docx, pdf, xlsx, csv", """{"type":"object","properties":{"path":{"type":"string","description":"Source file path"},"format":{"type":"string","description":"Target format: docx, pdf, xlsx, csv"}},"required":["path","format"]}""")
     tool("get_location", "Get device GPS location", """{"type":"object","properties":{}}""")
     tool("open_intent", "Open a URL, map, or app on the device", """{"type":"object","properties":{"uri":{"type":"string","description":"URI to open"}},"required":["uri"]}""")
     tool("image_generate", "Generate an image from a text prompt", """{"type":"object","properties":{"prompt":{"type":"string","description":"Image generation prompt"}},"required":["prompt"]}""")

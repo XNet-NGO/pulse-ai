@@ -21,8 +21,11 @@ class AttachmentProcessor @Inject constructor(@ApplicationContext private val ct
     return when {
       mime.startsWith("image/") -> processImage(uri, name)
       mime == "application/pdf" -> processPdf(uri, name)
+      mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || name.endsWith(".docx") -> processDocx(uri, name)
+      mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || name.endsWith(".xlsx") -> processXlsx(uri, name)
+      mime == "text/csv" || name.endsWith(".csv") -> processCsv(uri, name)
       mime.startsWith("text/") || isCodeFile(name) -> processText(uri, name)
-      else -> processText(uri, name) // fallback: try as text
+      else -> processText(uri, name)
     }
   }
 
@@ -81,23 +84,48 @@ class AttachmentProcessor @Inject constructor(@ApplicationContext private val ct
   }
 
   private fun processPdf(uri: Uri, name: String): Attachment? {
-    // Basic PDF text extraction using PdfRenderer
     return try {
-      val fd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
-      val renderer = android.graphics.pdf.PdfRenderer(fd)
-      val text = buildString {
-        for (i in 0 until minOf(renderer.pageCount, 20)) {
-          val page = renderer.openPage(i)
-          // PdfRenderer doesn't extract text directly — would need pdfbox
-          // For now, note the page count
-          page.close()
-        }
-        append("[PDF: $name, ${renderer.pageCount} pages — text extraction requires pdfbox]")
-      }
-      renderer.close()
-      fd.close()
-      Attachment("text", text, name)
+      val input = ctx.contentResolver.openInputStream(uri) ?: return null
+      val tempFile = java.io.File(ctx.cacheDir, "tmp_$name")
+      tempFile.outputStream().use { input.copyTo(it) }
+      input.close()
+      val text = DocumentConverter.readPdf(tempFile)
+      tempFile.delete()
+      Attachment("text", text.take(50000), name)
     } catch (e: Exception) { Attachment("text", "[Could not read PDF: ${e.message}]", name) }
+  }
+
+  private fun processDocx(uri: Uri, name: String): Attachment? {
+    return try {
+      val input = ctx.contentResolver.openInputStream(uri) ?: return null
+      val tempFile = java.io.File(ctx.cacheDir, "tmp_$name")
+      tempFile.outputStream().use { input.copyTo(it) }
+      input.close()
+      val text = DocumentConverter.readDocx(tempFile)
+      tempFile.delete()
+      Attachment("text", text.take(50000), name)
+    } catch (e: Exception) { Attachment("text", "[Could not read DOCX: ${e.message}]", name) }
+  }
+
+  private fun processXlsx(uri: Uri, name: String): Attachment? {
+    return try {
+      val input = ctx.contentResolver.openInputStream(uri) ?: return null
+      val tempFile = java.io.File(ctx.cacheDir, "tmp_$name")
+      tempFile.outputStream().use { input.copyTo(it) }
+      input.close()
+      val text = DocumentConverter.readXlsx(tempFile)
+      tempFile.delete()
+      Attachment("text", text.take(50000), name)
+    } catch (e: Exception) { Attachment("text", "[Could not read XLSX: ${e.message}]", name) }
+  }
+
+  private fun processCsv(uri: Uri, name: String): Attachment? {
+    return try {
+      val input = ctx.contentResolver.openInputStream(uri) ?: return null
+      val text = input.bufferedReader().readText().take(50000)
+      input.close()
+      Attachment("text", text, name)
+    } catch (e: Exception) { Attachment("text", "[Could not read CSV: ${e.message}]", name) }
   }
 
   private fun scaleBitmap(bmp: Bitmap, maxDim: Int): Bitmap {
