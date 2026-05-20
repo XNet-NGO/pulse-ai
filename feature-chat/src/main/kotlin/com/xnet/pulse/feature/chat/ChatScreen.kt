@@ -220,7 +220,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
           }
         }
       }) {
-        Icon(if (isInCall) Icons.Default.CallEnd else Icons.Default.Call, if (isInCall) "Hang up" else "Call", tint = if (isInCall) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary)
+        Icon(if (isInCall) Icons.Default.CallEnd else Icons.Default.Call, if (isInCall) "Hang up" else "Call", tint = if (isInCall) MaterialTheme.colorScheme.error else Color(0xFF4CAF50))
       }
       if (text.isBlank()) {
         // Mic button with permission request

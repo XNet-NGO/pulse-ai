@@ -50,14 +50,18 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
   private val _amplitude = MutableStateFlow(0f)
   val amplitude: StateFlow<Float> = _amplitude
 
+  private var connecting = false
+
   companion object {
     private const val SAMPLE_RATE = 16000
     private const val TAG = "RealtimeVoice"
-    private const val MODEL = "gemini-2.5-flash-preview-native-audio-dialog"
+    private const val MODEL = "gemini-3.1-flash-live-preview"
     private const val SYSTEM_PROMPT = "You are a helpful voice assistant. Be concise and conversational."
   }
 
   fun connect(apiKey: String): Flow<Event> = callbackFlow {
+    if (connecting || _isActive.value) { close(); return@callbackFlow }
+    connecting = true
     val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=$apiKey"
     android.util.Log.i(TAG, "Connecting to Gemini Live API")
 
@@ -91,6 +95,7 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
       }
 
       override fun onMessage(ws: WebSocket, text: String) {
+        android.util.Log.i(TAG, "onMessage: ${text.take(200)}")
         try {
           val json = JSONObject(text)
 
@@ -143,32 +148,56 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
       }
 
       override fun onMessage(ws: WebSocket, bytes: ByteString) {
-        // Binary frame - try parsing as JSON (Google sends binary UTF-8)
+        val text = bytes.utf8()
+        android.util.Log.i(TAG, "onBinary: ${text.take(150)}")
         try {
-          val text = bytes.utf8()
           val json = JSONObject(text)
+
+          // Setup complete
+          if (json.has("setupComplete")) {
+            android.util.Log.i(TAG, "Setup complete, starting capture")
+            trySend(Event.Connected)
+            _isActive.value = true
+            startCapture(ws)
+            startPlayback()
+            return
+          }
+
+          // Server content
           val sc = json.optJSONObject("serverContent")
-          sc?.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
-            for (i in 0 until parts.length()) {
-              parts.getJSONObject(i).optJSONObject("inlineData")?.optString("data")?.let { data ->
-                if (data.isNotBlank()) {
-                  val pcm = Base64.decode(data, Base64.DEFAULT)
-                  playAudio(pcm)
-                  trySend(Event.AudioChunk(pcm))
+          if (sc != null) {
+            sc.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
+              for (i in 0 until parts.length()) {
+                val part = parts.getJSONObject(i)
+                part.optJSONObject("inlineData")?.let { inline ->
+                  val data = inline.optString("data", "")
+                  if (data.isNotBlank()) {
+                    val pcm = Base64.decode(data, Base64.DEFAULT)
+                    playAudio(pcm)
+                    trySend(Event.AudioChunk(pcm))
+                  }
                 }
+                val t = part.optString("text", "")
+                if (t.isNotBlank()) trySend(Event.TextDelta(t))
               }
             }
+            sc.optJSONObject("inputTranscription")?.optString("text")?.let {
+              if (it.isNotBlank()) trySend(Event.InputTranscription(it))
+            }
+            sc.optJSONObject("outputTranscription")?.optString("text")?.let {
+              if (it.isNotBlank()) trySend(Event.OutputTranscription(it))
+            }
+            if (sc.optBoolean("turnComplete", false)) {
+              trySend(Event.TurnComplete)
+            }
           }
-        } catch (_: Exception) {
-          // Raw binary audio
-          val pcm = bytes.toByteArray()
-          playAudio(pcm)
-          trySend(Event.AudioChunk(pcm))
+        } catch (e: Exception) {
+          android.util.Log.e(TAG, "Binary parse error: ${e.message}")
         }
       }
 
       override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-        android.util.Log.e(TAG, "Failed: ${t.message}", t)
+        android.util.Log.e(TAG, "Failed: ${t.message} resp=${response?.code}", t)
         trySend(Event.Error(t.message ?: "Connection failed"))
         _isActive.value = false
         close()
@@ -255,6 +284,7 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
 
   fun disconnect() {
     _isActive.value = false
+    connecting = false
     captureJob?.cancel()
     captureJob = null
     audioRecord?.stop()

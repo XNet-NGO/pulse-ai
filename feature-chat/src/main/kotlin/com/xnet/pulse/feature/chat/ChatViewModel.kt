@@ -190,8 +190,17 @@ class ChatViewModel @Inject constructor(
   fun deleteConversation(id: String) { viewModelScope.launch { dao.deleteConversation(id); DirectoryManager.deleteConversation(id) } }
 
   fun startCall() {
+    if (realtimeVoice.isActive.value) return
+    android.util.Log.i("RealtimeVoice", "startCall() invoked")
     viewModelScope.launch {
-      realtimeVoice.connect(GOOGLE_AI_KEY).collect { /* events handled internally */ }
+      realtimeVoice.connect(GOOGLE_AI_KEY).collect { event ->
+        when (event) {
+          is RealtimeVoice.Event.Error -> android.util.Log.e("RealtimeVoice", "Event: ${event.msg}")
+          is RealtimeVoice.Event.Connected -> android.util.Log.i("RealtimeVoice", "Connected!")
+          is RealtimeVoice.Event.Disconnected -> android.util.Log.i("RealtimeVoice", "Disconnected")
+          else -> {}
+        }
+      }
     }
   }
 
