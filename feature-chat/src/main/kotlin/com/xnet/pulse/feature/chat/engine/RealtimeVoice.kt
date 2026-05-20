@@ -92,7 +92,7 @@ Tool Guidance:
 - Report tool results naturally in speech — no markdown, no formatting, no URLs unless asked."""
   }
 
-  fun connect(apiKey: String): Flow<Event> = callbackFlow {
+  fun connect(apiKey: String, voiceName: String = "Aoede", thinkingLevel: String = "minimal"): Flow<Event> = callbackFlow {
     if (connecting || _isActive.value) { close(); return@callbackFlow }
     connecting = true
     val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=$apiKey"
@@ -103,7 +103,7 @@ Tool Guidance:
     webSocket = http.newWebSocket(request, object : WebSocketListener() {
       override fun onOpen(ws: WebSocket, response: Response) {
         android.util.Log.i(TAG, "WebSocket open, sending setup")
-        ws.send(buildSetup().toString())
+        ws.send(buildSetup(voiceName, thinkingLevel).toString())
       }
 
       override fun onMessage(ws: WebSocket, text: String) { handleMessage(ws, text) }
@@ -296,15 +296,18 @@ Tool Guidance:
     _amplitude.value = 0f
   }
 
-  private fun buildSetup(): JSONObject = JSONObject().apply {
+  private fun buildSetup(voiceName: String, thinkingLevel: String): JSONObject = JSONObject().apply {
     put("setup", JSONObject().apply {
       put("model", "models/$MODEL")
       put("generationConfig", JSONObject().apply {
         put("responseModalities", JSONArray().apply { put("AUDIO") })
         put("speechConfig", JSONObject().apply {
           put("voiceConfig", JSONObject().apply {
-            put("prebuiltVoiceConfig", JSONObject().apply { put("voiceName", "Aoede") })
+            put("prebuiltVoiceConfig", JSONObject().apply { put("voiceName", voiceName) })
           })
+        })
+        put("thinkingConfig", JSONObject().apply {
+          put("thinkingLevel", thinkingLevel)
         })
       })
       put("systemInstruction", JSONObject().apply {

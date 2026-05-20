@@ -29,6 +29,10 @@ class ThemePrefs(private val ctx: Context) {
     val VIDEO_LOOP = booleanPreferencesKey("video_loop")
     val VIDEO_ROTATION = intPreferencesKey("video_rotation") // 0, 90, 180, 270
 
+    // Voice
+    val VOICE_NAME = stringPreferencesKey("voice_name")
+    val THINKING_LEVEL = stringPreferencesKey("thinking_level")
+
     // Bubble colors
     val USER_BUBBLE_COLOR = intPreferencesKey("user_bubble_color")
     val AI_BUBBLE_COLOR = intPreferencesKey("ai_bubble_color")
@@ -83,6 +87,10 @@ class ThemePrefs(private val ctx: Context) {
   val primaryTextColor: Flow<Int?> = ds.data.map { it[PRIMARY_TEXT_COLOR] }
   val secondaryTextColor: Flow<Int?> = ds.data.map { it[SECONDARY_TEXT_COLOR] }
   val useCustomText: Flow<Boolean> = ds.data.map { it[USE_CUSTOM_TEXT] ?: false }
+
+  // Voice settings
+  val voiceName: Flow<String> = ds.data.map { it[VOICE_NAME] ?: "Aoede" }
+  val thinkingLevel: Flow<String> = ds.data.map { it[THINKING_LEVEL] ?: "minimal" }
 
   suspend fun <T> set(key: androidx.datastore.preferences.core.Preferences.Key<T>, value: T) {
     ds.edit { it[key] = value }

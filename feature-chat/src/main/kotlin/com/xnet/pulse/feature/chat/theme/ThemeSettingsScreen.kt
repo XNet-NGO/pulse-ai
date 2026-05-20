@@ -63,6 +63,8 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
   val showStatusTags by prefs.showStatusTags.collectAsState(initial = true)
   val showToolActivity by prefs.showToolActivity.collectAsState(initial = true)
   val uiOpacity by prefs.uiOpacity.collectAsState(initial = 1f)
+  val voiceName by prefs.voiceName.collectAsState(initial = "Aoede")
+  val thinkingLevel by prefs.thinkingLevel.collectAsState(initial = "minimal")
   val useUiColor by prefs.useUiColor.collectAsState(initial = false)
   val uiColor by prefs.uiColor.collectAsState(initial = null)
   val useCustomText by prefs.useCustomText.collectAsState(initial = false)
@@ -216,6 +218,52 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
       Spacer(Modifier.height(4.dp))
       Text("UI opacity: ${(uiOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
       Slider(value = uiOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.UI_OPACITY, it) } }, valueRange = 0.1f..1f)
+
+      HorizontalDivider(Modifier.padding(vertical = 4.dp))
+      SectionHeader("Voice")
+
+      // Voice picker
+      val voices = listOf(
+        "Aoede" to "Breezy", "Puck" to "Upbeat", "Kore" to "Firm", "Charon" to "Informative",
+        "Fenrir" to "Excitable", "Leda" to "Youthful", "Zephyr" to "Bright", "Orus" to "Firm",
+        "Callirrhoe" to "Easy-going", "Enceladus" to "Breathy", "Iapetus" to "Clear",
+        "Umbriel" to "Easy-going", "Algieba" to "Smooth", "Despina" to "Smooth",
+        "Autonoe" to "Bright", "Erinome" to "Clear", "Algenib" to "Gravelly",
+        "Rasalgethi" to "Informative", "Laomedeia" to "Upbeat", "Achernar" to "Soft",
+        "Alnilam" to "Firm", "Schedar" to "Even", "Gacrux" to "Mature",
+        "Pulcherrima" to "Forward", "Achird" to "Friendly", "Zubenelgenubi" to "Casual",
+        "Vindemiatrix" to "Gentle", "Sadachbia" to "Lively", "Sadaltager" to "Knowledgeable",
+        "Sulafat" to "Warm"
+      )
+      var voiceExpanded by remember { mutableStateOf(false) }
+      Box {
+        OutlinedButton(onClick = { voiceExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+          Text("$voiceName", modifier = Modifier.weight(1f))
+          Text(voices.firstOrNull { it.first == voiceName }?.second ?: "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        DropdownMenu(expanded = voiceExpanded, onDismissRequest = { voiceExpanded = false }) {
+          voices.forEach { (name, style) ->
+            DropdownMenuItem(
+              text = { Row { Text(name, modifier = Modifier.weight(1f)); Text(style, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+              onClick = { scope.launch { prefs.set(ThemePrefs.VOICE_NAME, name) }; voiceExpanded = false }
+            )
+          }
+        }
+      }
+
+      Spacer(Modifier.height(8.dp))
+      Text("Thinking level", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      val levels = listOf("minimal" to "Fastest", "low" to "Fast", "medium" to "Balanced", "high" to "Thorough")
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        levels.forEach { (level, label) ->
+          val selected = thinkingLevel == level
+          FilterChip(
+            selected = selected,
+            onClick = { scope.launch { prefs.set(ThemePrefs.THINKING_LEVEL, level) } },
+            label = { Text(label, fontSize = 12.sp) },
+          )
+        }
+      }
 
       Spacer(Modifier.height(24.dp))
     }

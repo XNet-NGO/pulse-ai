@@ -27,6 +27,7 @@ class ChatViewModel @Inject constructor(
   val voiceManager: VoiceManager,
   val realtimeVoice: RealtimeVoice,
   val attachmentProcessor: AttachmentProcessor,
+  @dagger.hilt.android.qualifiers.ApplicationContext private val appCtx: android.content.Context,
 ) : ViewModel() {
 
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -206,12 +207,15 @@ class ChatViewModel @Inject constructor(
     android.util.Log.i("RealtimeVoice", "startCall() invoked")
     toolExecutor.conversationId = currentConvId
     viewModelScope.launch {
+      val prefs = com.xnet.pulse.feature.chat.theme.ThemePrefs(appCtx)
+      val voice = prefs.voiceName.first()
+      val thinking = prefs.thinkingLevel.first()
       var currentInputId: String? = null
       var currentOutputId: String? = null
       val inputBuf = StringBuilder()
       val outputBuf = StringBuilder()
 
-      realtimeVoice.connect(GOOGLE_AI_KEY).collect { event ->
+      realtimeVoice.connect(GOOGLE_AI_KEY, voice, thinking).collect { event ->
         when (event) {
           is RealtimeVoice.Event.Error -> android.util.Log.e("RealtimeVoice", "Event: ${event.msg}")
           is RealtimeVoice.Event.Connected -> android.util.Log.i("RealtimeVoice", "Connected!")
