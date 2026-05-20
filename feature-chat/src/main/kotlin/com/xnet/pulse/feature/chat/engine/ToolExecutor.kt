@@ -47,8 +47,6 @@ class ToolExecutor @Inject constructor(
 
   suspend fun execute(name: String, args: Map<String, Any?>): String = when (name) {
     "search" -> search(args["query"]?.toString() ?: "", args["category"]?.toString() ?: "general")
-    "search_web" -> search(args["query"]?.toString() ?: "", "general")
-    "search_images" -> search(args["query"]?.toString() ?: "", "images")
     "fetch_url" -> fetchUrl(args["url"]?.toString() ?: "", args["mode"]?.toString() ?: "text")
     "list_directory" -> listDirectory(args["path"]?.toString() ?: "/")
     "read_file" -> readFile(args["path"]?.toString() ?: "")
@@ -58,7 +56,6 @@ class ToolExecutor @Inject constructor(
     "get_location" -> getLocation()
     "open_intent" -> openIntent(args["uri"]?.toString() ?: "")
     "image_generate" -> imageGenerate(args["prompt"]?.toString() ?: "")
-    "save_image" -> fetchUrl(args["url"]?.toString() ?: "", "image")
     "memory_store" -> memoryStore(args["key"]?.toString() ?: "", args["content"]?.toString() ?: "", args["category"]?.toString() ?: "general")
     "memory_recall" -> memoryRecall(args["query"]?.toString() ?: "")
     else -> "Unknown tool: $name"
