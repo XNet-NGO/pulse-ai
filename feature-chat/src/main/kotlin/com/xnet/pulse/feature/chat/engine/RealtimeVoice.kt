@@ -6,6 +6,8 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import android.util.Base64
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
@@ -20,13 +22,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Context) {
+class RealtimeVoice @Inject constructor(
+  @ApplicationContext private val ctx: Context,
+  private val toolExecutor: ToolExecutor
+) {
 
   sealed class Event {
     data class TextDelta(val text: String) : Event()
     data class AudioChunk(val pcm: ByteArray) : Event()
     data class InputTranscription(val text: String) : Event()
     data class OutputTranscription(val text: String) : Event()
+    data class ToolCall(val name: String, val id: String, val args: JSONObject) : Event()
     data object TurnComplete : Event()
     data class Error(val msg: String) : Event()
     data object Connected : Event()
@@ -41,8 +47,11 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
   private var webSocket: WebSocket? = null
   private var audioRecord: AudioRecord? = null
   private var audioTrack: AudioTrack? = null
+  private var echoCanceler: AcousticEchoCanceler? = null
+  private var noiseSuppressor: NoiseSuppressor? = null
   private var captureJob: Job? = null
   private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+  private val playbackLock = Any()
 
   private val _isActive = MutableStateFlow(false)
   val isActive: StateFlow<Boolean> = _isActive
@@ -57,7 +66,14 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
     private const val SAMPLE_RATE_OUT = 24000
     private const val TAG = "RealtimeVoice"
     private const val MODEL = "gemini-3.1-flash-live-preview"
-    private const val SYSTEM_PROMPT = "You are a helpful voice assistant. Be concise and conversational."
+    private const val SYSTEM_PROMPT = """You are AIO Pulse, a personal voice assistant on the user's Android device with direct access to device tools.
+
+Rules:
+- Be concise and conversational — this is a voice call.
+- Use short sentences. No lists, markdown, or formatting.
+- Use tools proactively when they help. Report results naturally.
+- Never say you can't do something — use your tools.
+- For time, weather, location, files, web searches — use the appropriate tool."""
   }
 
   fun connect(apiKey: String): Flow<Event> = callbackFlow {
@@ -71,205 +87,104 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
     webSocket = http.newWebSocket(request, object : WebSocketListener() {
       override fun onOpen(ws: WebSocket, response: Response) {
         android.util.Log.i(TAG, "WebSocket open, sending setup")
-        // Send setup message
-        val setup = JSONObject().apply {
-          put("setup", JSONObject().apply {
-            put("model", "models/$MODEL")
-            put("generationConfig", JSONObject().apply {
-              put("responseModalities", JSONArray().apply { put("AUDIO") })
-              put("speechConfig", JSONObject().apply {
-                put("voiceConfig", JSONObject().apply {
-                  put("prebuiltVoiceConfig", JSONObject().apply {
-                    put("voiceName", "Aoede")
-                  })
-                })
-              })
-            })
-            put("systemInstruction", JSONObject().apply {
-              put("parts", JSONArray().apply {
-                put(JSONObject().apply { put("text", SYSTEM_PROMPT) })
-              })
-            })
-          })
-        }
-        ws.send(setup.toString())
+        ws.send(buildSetup().toString())
       }
 
-      override fun onMessage(ws: WebSocket, text: String) {
-        android.util.Log.i(TAG, "onMessage: ${text.take(200)}")
-        try {
-          val json = JSONObject(text)
-
-          // Setup complete
-          if (json.has("setupComplete")) {
-            android.util.Log.i(TAG, "Setup complete, starting capture")
-            trySend(Event.Connected)
-            _isActive.value = true
-            startCapture(ws)
-            startPlayback()
-            return
-          }
-
-          // Server content
-          val sc = json.optJSONObject("serverContent")
-          if (sc != null) {
-            // Model turn - audio/text parts
-            sc.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
-              for (i in 0 until parts.length()) {
-                val part = parts.getJSONObject(i)
-                // Audio
-                part.optJSONObject("inlineData")?.let { inline ->
-                  val data = inline.optString("data", "")
-                  if (data.isNotBlank()) {
-                    val pcm = Base64.decode(data, Base64.DEFAULT)
-                    playAudio(pcm)
-                    trySend(Event.AudioChunk(pcm))
-                  }
-                }
-                // Text
-                val t = part.optString("text", "")
-                if (t.isNotBlank()) trySend(Event.TextDelta(t))
-              }
-            }
-            // Transcriptions
-            sc.optJSONObject("inputTranscription")?.optString("text")?.let {
-              if (it.isNotBlank()) trySend(Event.InputTranscription(it))
-            }
-            sc.optJSONObject("outputTranscription")?.optString("text")?.let {
-              if (it.isNotBlank()) trySend(Event.OutputTranscription(it))
-            }
-            // Turn complete
-            if (sc.optBoolean("turnComplete", false)) {
-              trySend(Event.TurnComplete)
-            }
-          }
-        } catch (e: Exception) {
-          android.util.Log.e(TAG, "Parse error: ${e.message}")
-        }
-      }
-
-      override fun onMessage(ws: WebSocket, bytes: ByteString) {
-        val text = bytes.utf8()
-        android.util.Log.i(TAG, "onBinary: ${text.take(150)}")
-        try {
-          val json = JSONObject(text)
-
-          // Setup complete
-          if (json.has("setupComplete")) {
-            android.util.Log.i(TAG, "Setup complete, starting capture")
-            trySend(Event.Connected)
-            _isActive.value = true
-            startCapture(ws)
-            startPlayback()
-            return
-          }
-
-          // Server content
-          val sc = json.optJSONObject("serverContent")
-          if (sc != null) {
-            sc.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
-              for (i in 0 until parts.length()) {
-                val part = parts.getJSONObject(i)
-                part.optJSONObject("inlineData")?.let { inline ->
-                  val data = inline.optString("data", "")
-                  if (data.isNotBlank()) {
-                    val pcm = Base64.decode(data, Base64.DEFAULT)
-                    playAudio(pcm)
-                    trySend(Event.AudioChunk(pcm))
-                  }
-                }
-                val t = part.optString("text", "")
-                if (t.isNotBlank()) trySend(Event.TextDelta(t))
-              }
-            }
-            sc.optJSONObject("inputTranscription")?.optString("text")?.let {
-              if (it.isNotBlank()) trySend(Event.InputTranscription(it))
-            }
-            sc.optJSONObject("outputTranscription")?.optString("text")?.let {
-              if (it.isNotBlank()) trySend(Event.OutputTranscription(it))
-            }
-            if (sc.optBoolean("turnComplete", false)) {
-              trySend(Event.TurnComplete)
-            }
-          }
-        } catch (e: Exception) {
-          android.util.Log.e(TAG, "Binary parse error: ${e.message}")
-        }
-      }
+      override fun onMessage(ws: WebSocket, text: String) { handleMessage(ws, text) }
+      override fun onMessage(ws: WebSocket, bytes: ByteString) { handleMessage(ws, bytes.utf8()) }
 
       override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-        android.util.Log.e(TAG, "Failed: ${t.message} resp=${response?.code}", t)
+        android.util.Log.e(TAG, "Failed: ${t.message}", t)
         trySend(Event.Error(t.message ?: "Connection failed"))
-        _isActive.value = false
-        close()
+        _isActive.value = false; connecting = false; close()
       }
 
       override fun onClosed(ws: WebSocket, code: Int, reason: String) {
         android.util.Log.i(TAG, "Closed: $code $reason")
         trySend(Event.Disconnected)
-        _isActive.value = false
-        close()
+        _isActive.value = false; connecting = false; close()
+      }
+
+      private fun handleMessage(ws: WebSocket, text: String) {
+        try {
+          val json = JSONObject(text)
+
+          if (json.has("setupComplete")) {
+            android.util.Log.i(TAG, "Setup complete")
+            trySend(Event.Connected)
+            _isActive.value = true
+            startCapture(ws)
+            startPlayback()
+            return
+          }
+
+          // Tool calls from model
+          json.optJSONObject("toolCall")?.let { tc ->
+            val fcs = tc.optJSONArray("functionCalls") ?: return@let
+            for (i in 0 until fcs.length()) {
+              val fc = fcs.getJSONObject(i)
+              val name = fc.getString("name")
+              val id = fc.getString("id")
+              val args = fc.optJSONObject("args") ?: JSONObject()
+              android.util.Log.i(TAG, "Tool call: $name($args)")
+              trySend(Event.ToolCall(name, id, args))
+              // Execute tool and send response
+              scope.launch {
+                val argsMap = mutableMapOf<String, Any?>()
+                args.keys().forEach { k -> argsMap[k] = args.opt(k) }
+                val result = try { toolExecutor.execute(name, argsMap) } catch (e: Exception) { "Error: ${e.message}" }
+                android.util.Log.i(TAG, "Tool result: ${result.take(100)}")
+                sendToolResponse(id, name, result)
+              }
+            }
+            return
+          }
+
+          // Server content
+          val sc = json.optJSONObject("serverContent") ?: return
+          sc.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
+            for (i in 0 until parts.length()) {
+              val part = parts.getJSONObject(i)
+              part.optJSONObject("inlineData")?.optString("data")?.let { data ->
+                if (data.isNotBlank()) {
+                  val pcm = Base64.decode(data, Base64.DEFAULT)
+                  playAudio(pcm)
+                  trySend(Event.AudioChunk(pcm))
+                }
+              }
+              val t = part.optString("text", "")
+              if (t.isNotBlank()) trySend(Event.TextDelta(t))
+            }
+          }
+          sc.optJSONObject("inputTranscription")?.optString("text")?.let {
+            if (it.isNotBlank()) trySend(Event.InputTranscription(it))
+          }
+          sc.optJSONObject("outputTranscription")?.optString("text")?.let {
+            if (it.isNotBlank()) trySend(Event.OutputTranscription(it))
+          }
+          if (sc.optBoolean("turnComplete", false)) trySend(Event.TurnComplete)
+        } catch (e: Exception) {
+          android.util.Log.e(TAG, "Parse error: ${e.message}")
+        }
       }
     })
 
     awaitClose { disconnect() }
   }.flowOn(Dispatchers.IO)
 
-  private fun startCapture(ws: WebSocket) {
-    val bufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE_IN, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-    if (bufSize <= 0) return
-
-    audioRecord = AudioRecord(
-      MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE_IN,
-      AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize * 2
-    )
-    if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) { audioRecord?.release(); audioRecord = null; return }
-    audioRecord?.startRecording()
-
-    captureJob = scope.launch {
-      val buf = ByteArray(bufSize)
-      while (isActive && _isActive.value) {
-        val read = audioRecord?.read(buf, 0, buf.size) ?: 0
-        if (read > 0) {
-          val chunk = buf.copyOf(read)
-          // Amplitude
-          var sum = 0L
-          for (i in 0 until read step 2) {
-            val s = (buf[i].toInt() and 0xFF) or ((buf.getOrNull(i + 1)?.toInt() ?: 0) shl 8)
-            val signed = if (s > 32767) s - 65536 else s
-            sum += (signed.toLong() * signed.toLong())
-          }
-          _amplitude.value = (kotlin.math.sqrt((sum / (read / 2)).toDouble()) / 32768.0).toFloat().coerceIn(0f, 1f)
-          // Send as Google Live API format
-          val b64 = Base64.encodeToString(chunk, Base64.NO_WRAP)
-          val msg = """{"realtimeInput":{"audio":{"data":"$b64","mimeType":"audio/pcm;rate=$SAMPLE_RATE_IN"}}}"""
-          ws.send(msg)
-        }
-      }
+  private fun sendToolResponse(id: String, name: String, result: String) {
+    val msg = JSONObject().apply {
+      put("toolResponse", JSONObject().apply {
+        put("functionResponses", JSONArray().apply {
+          put(JSONObject().apply {
+            put("id", id)
+            put("name", name)
+            put("response", JSONObject().apply { put("result", result) })
+          })
+        })
+      })
     }
-  }
-
-  private fun startPlayback() {
-    val bufSize = AudioTrack.getMinBufferSize(SAMPLE_RATE_OUT, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-    audioTrack = AudioTrack.Builder()
-      .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-      .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(SAMPLE_RATE_OUT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-      .setBufferSizeInBytes(bufSize * 2)
-      .setTransferMode(AudioTrack.MODE_STREAM)
-      .build()
-    audioTrack?.play()
-  }
-
-  private val playbackLock = Any()
-
-  private fun playAudio(pcm: ByteArray) {
-    synchronized(playbackLock) {
-      val track = audioTrack ?: return
-      if (track.state != AudioTrack.STATE_INITIALIZED) return
-      try {
-        track.write(pcm, 0, pcm.size)
-      } catch (_: Exception) {}
-    }
+    webSocket?.send(msg.toString())
   }
 
   fun sendText(text: String) {
@@ -278,9 +193,7 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
         put("turns", JSONArray().apply {
           put(JSONObject().apply {
             put("role", "user")
-            put("parts", JSONArray().apply {
-              put(JSONObject().apply { put("text", text) })
-            })
+            put("parts", JSONArray().apply { put(JSONObject().apply { put("text", text) }) })
           })
         })
         put("turnComplete", true)
@@ -289,21 +202,122 @@ class RealtimeVoice @Inject constructor(@ApplicationContext private val ctx: Con
     webSocket?.send(msg.toString())
   }
 
+  private fun startCapture(ws: WebSocket) {
+    val bufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE_IN, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+    if (bufSize <= 0) return
+
+    // VOICE_COMMUNICATION enables platform-level echo cancellation path
+    audioRecord = AudioRecord(
+      MediaRecorder.AudioSource.VOICE_COMMUNICATION, SAMPLE_RATE_IN,
+      AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize * 2
+    )
+    if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) { audioRecord?.release(); audioRecord = null; return }
+
+    // Enable AEC and noise suppression
+    val sessionId = audioRecord!!.audioSessionId
+    if (AcousticEchoCanceler.isAvailable()) {
+      echoCanceler = AcousticEchoCanceler.create(sessionId)?.apply { enabled = true }
+    }
+    if (NoiseSuppressor.isAvailable()) {
+      noiseSuppressor = NoiseSuppressor.create(sessionId)?.apply { enabled = true }
+    }
+
+    audioRecord?.startRecording()
+
+    captureJob = scope.launch {
+      val buf = ByteArray(bufSize)
+      while (isActive && _isActive.value) {
+        val read = audioRecord?.read(buf, 0, buf.size) ?: 0
+        if (read > 0) {
+          var sum = 0L
+          for (i in 0 until read step 2) {
+            val s = (buf[i].toInt() and 0xFF) or ((buf.getOrNull(i + 1)?.toInt() ?: 0) shl 8)
+            val signed = if (s > 32767) s - 65536 else s
+            sum += (signed.toLong() * signed.toLong())
+          }
+          _amplitude.value = (kotlin.math.sqrt((sum / (read / 2)).toDouble()) / 32768.0).toFloat().coerceIn(0f, 1f)
+          val b64 = Base64.encodeToString(buf.copyOf(read), Base64.NO_WRAP)
+          ws.send("""{"realtimeInput":{"audio":{"data":"$b64","mimeType":"audio/pcm;rate=$SAMPLE_RATE_IN"}}}""")
+        }
+      }
+    }
+  }
+
+  private fun startPlayback() {
+    val bufSize = AudioTrack.getMinBufferSize(SAMPLE_RATE_OUT, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+    audioTrack = AudioTrack.Builder()
+      .setAudioAttributes(AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+      .setAudioFormat(AudioFormat.Builder()
+        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+        .setSampleRate(SAMPLE_RATE_OUT)
+        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+      .setBufferSizeInBytes(bufSize * 4)
+      .setTransferMode(AudioTrack.MODE_STREAM)
+      .build()
+    audioTrack?.play()
+  }
+
+  private fun playAudio(pcm: ByteArray) {
+    synchronized(playbackLock) {
+      val track = audioTrack ?: return
+      if (track.state != AudioTrack.STATE_INITIALIZED) return
+      try { track.write(pcm, 0, pcm.size) } catch (_: Exception) {}
+    }
+  }
+
   fun disconnect() {
     _isActive.value = false
     connecting = false
-    captureJob?.cancel()
-    captureJob = null
-    audioRecord?.stop()
-    audioRecord?.release()
-    audioRecord = null
-    synchronized(playbackLock) {
-      audioTrack?.stop()
-      audioTrack?.release()
-      audioTrack = null
-    }
-    webSocket?.close(1000, "Done")
-    webSocket = null
+    captureJob?.cancel(); captureJob = null
+    echoCanceler?.release(); echoCanceler = null
+    noiseSuppressor?.release(); noiseSuppressor = null
+    audioRecord?.stop(); audioRecord?.release(); audioRecord = null
+    synchronized(playbackLock) { audioTrack?.stop(); audioTrack?.release(); audioTrack = null }
+    webSocket?.close(1000, "Done"); webSocket = null
     _amplitude.value = 0f
+  }
+
+  private fun buildSetup(): JSONObject = JSONObject().apply {
+    put("setup", JSONObject().apply {
+      put("model", "models/$MODEL")
+      put("generationConfig", JSONObject().apply {
+        put("responseModalities", JSONArray().apply { put("AUDIO") })
+        put("speechConfig", JSONObject().apply {
+          put("voiceConfig", JSONObject().apply {
+            put("prebuiltVoiceConfig", JSONObject().apply { put("voiceName", "Aoede") })
+          })
+        })
+      })
+      put("systemInstruction", JSONObject().apply {
+        put("parts", JSONArray().apply { put(JSONObject().apply { put("text", SYSTEM_PROMPT) }) })
+      })
+      put("tools", JSONArray().apply {
+        put(JSONObject().apply { put("functionDeclarations", buildToolDeclarations()) })
+      })
+    })
+  }
+
+  private fun buildToolDeclarations(): JSONArray {
+    val decls = JSONArray()
+    fun tool(name: String, desc: String, params: String) {
+      decls.put(JSONObject().apply {
+        put("name", name); put("description", desc); put("parameters", JSONObject(params))
+      })
+    }
+    // All AIO Pulse tools
+    tool("search_web", "Search the web for current information", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}""")
+    tool("search_images", "Search for images on the web", """{"type":"object","properties":{"query":{"type":"string","description":"Image search query"}},"required":["query"]}""")
+    tool("fetch_url", "Fetch a URL and return text content", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"text, md, or raw"}},"required":["url"]}""")
+    tool("list_directory", "List directory contents", """{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":["path"]}""")
+    tool("read_file", "Read file contents", """{"type":"object","properties":{"path":{"type":"string","description":"File path"}},"required":["path"]}""")
+    tool("write_file", "Write content to a file", """{"type":"object","properties":{"path":{"type":"string","description":"File path"},"content":{"type":"string","description":"File content"}},"required":["path","content"]}""")
+    tool("get_location", "Get device GPS location", """{"type":"object","properties":{}}""")
+    tool("open_intent", "Open a URL, map, or app on the device", """{"type":"object","properties":{"uri":{"type":"string","description":"URI to open"}},"required":["uri"]}""")
+    tool("image_generate", "Generate an image from a text prompt", """{"type":"object","properties":{"prompt":{"type":"string","description":"Image generation prompt"}},"required":["prompt"]}""")
+    tool("memory_store", "Remember a fact across conversations", """{"type":"object","properties":{"key":{"type":"string","description":"Short key"},"content":{"type":"string","description":"Fact to remember"},"category":{"type":"string","description":"Category"}},"required":["key","content"]}""")
+    tool("memory_recall", "Search stored memories", """{"type":"object","properties":{"query":{"type":"string","description":"Search term"}},"required":["query"]}""")
+    return decls
   }
 }
