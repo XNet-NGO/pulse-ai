@@ -254,8 +254,8 @@ class ChatViewModel @Inject constructor(
           }
           is RealtimeVoice.Event.ToolResult -> {
             _status.value = null
-            // Render images/content from tool results in chat
-            if (event.result.contains("![")) {
+            // Render file references and images from tool results in chat
+            if (event.result.contains("![") || event.result.contains("file://")) {
               if (currentOutputId == null) {
                 currentOutputId = java.util.UUID.randomUUID().toString()
                 outputBuf.clear()

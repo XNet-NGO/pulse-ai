@@ -111,7 +111,21 @@ class ToolExecutor @Inject constructor(
     val file = File(dir, path.removePrefix("/"))
     file.parentFile?.mkdirs()
     file.writeText(content)
-    return "Written ${content.length} chars to ${file.name}"
+    val ext = file.extension.lowercase()
+    val filePath = "file://${file.absolutePath}"
+    return when (ext) {
+      "png", "jpg", "jpeg", "gif", "webp" -> "Written ${file.name}\n![${file.name}]($filePath)"
+      "svg" -> {
+        // Rasterize SVG for inline display
+        try {
+          val raster = com.xnet.pulse.feature.chat.engine.AttachmentProcessor(ctx).normalizeForVision(file.readBytes(), file.name)
+          val rasterFile = File(file.parent, "${file.nameWithoutExtension}.jpg")
+          rasterFile.writeBytes(raster)
+          "Written ${file.name}\n![${file.name}](file://${rasterFile.absolutePath})"
+        } catch (_: Exception) { "Written ${file.name}\n![${file.name}]($filePath)" }
+      }
+      else -> "Written ${content.length} chars to ${file.name}\n📄 [$filePath]"
+    }
   }
 
   private fun getLocation(): String {
