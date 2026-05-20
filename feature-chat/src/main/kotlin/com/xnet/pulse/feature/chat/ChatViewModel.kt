@@ -190,7 +190,7 @@ class ChatViewModel @Inject constructor(
   private fun estimateTokens(text: String): Int = (text.length / 3.5).toInt().coerceAtLeast(1)
 
   private fun toolStatusLabel(name: String): String = when (name) {
-    "search_web", "search_images" -> "Searching..."
+    "search_web", "search_images", "search" -> "Searching..."
     "fetch_url" -> "Reading..."
     "read_file", "write_file", "list_directory" -> "Working..."
     "get_location" -> "Locating..."

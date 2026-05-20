@@ -31,9 +31,8 @@ class ToolExecutor @Inject constructor(
   private var searchUrl = "https://search.xnet.ngo"
 
   fun buildToolDefs(): List<ToolDef> = listOf(
-    ToolDef("search_web", "Search the web for current information.", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""", true),
-    ToolDef("search_images", "Search for images on the web.", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""", true),
-    ToolDef("fetch_url", "Fetch a URL. Modes: text (default), md, raw.", """{"type":"object","properties":{"url":{"type":"string"},"mode":{"type":"string"}},"required":["url"]}""", true),
+    ToolDef("search", "Search the web. Use category 'images' for image results, 'general' (default) for web results.", """{"type":"object","properties":{"query":{"type":"string"},"category":{"type":"string"}},"required":["query"]}""", true),
+    ToolDef("fetch_url", "Fetch a URL. Modes: text (default), md, raw, image (saves image locally for display).", """{"type":"object","properties":{"url":{"type":"string"},"mode":{"type":"string"}},"required":["url"]}""", true),
     ToolDef("list_directory", "List directory contents.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
     ToolDef("read_file", "Read file contents.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
     ToolDef("write_file", "Write content to a file.", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""", false),
@@ -42,14 +41,14 @@ class ToolExecutor @Inject constructor(
     ToolDef("get_location", "Get device GPS location.", """{"type":"object","properties":{}}""", true),
     ToolDef("open_intent", "Open a URL, map, or app.", """{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}""", false),
     ToolDef("image_generate", "Generate an image from a text prompt.", """{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"]}""", true),
-    ToolDef("save_image", "Download an image from URL and save locally for display in chat.", """{"type":"object","properties":{"url":{"type":"string"},"filename":{"type":"string"}},"required":["url"]}""", true),
     ToolDef("memory_store", "Remember a fact across conversations.", """{"type":"object","properties":{"key":{"type":"string"},"content":{"type":"string"},"category":{"type":"string"}},"required":["key","content"]}""", true),
     ToolDef("memory_recall", "Search memory. Empty query lists all.", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""", true),
   )
 
   suspend fun execute(name: String, args: Map<String, Any?>): String = when (name) {
-    "search_web" -> searchWeb(args["query"]?.toString() ?: "")
-    "search_images" -> searchImages(args["query"]?.toString() ?: "")
+    "search" -> search(args["query"]?.toString() ?: "", args["category"]?.toString() ?: "general")
+    "search_web" -> search(args["query"]?.toString() ?: "", "general")
+    "search_images" -> search(args["query"]?.toString() ?: "", "images")
     "fetch_url" -> fetchUrl(args["url"]?.toString() ?: "", args["mode"]?.toString() ?: "text")
     "list_directory" -> listDirectory(args["path"]?.toString() ?: "/")
     "read_file" -> readFile(args["path"]?.toString() ?: "")
@@ -59,40 +58,37 @@ class ToolExecutor @Inject constructor(
     "get_location" -> getLocation()
     "open_intent" -> openIntent(args["uri"]?.toString() ?: "")
     "image_generate" -> imageGenerate(args["prompt"]?.toString() ?: "")
-    "save_image" -> saveImage(args["url"]?.toString() ?: "", args["filename"]?.toString() ?: "")
+    "save_image" -> fetchUrl(args["url"]?.toString() ?: "", "image")
     "memory_store" -> memoryStore(args["key"]?.toString() ?: "", args["content"]?.toString() ?: "", args["category"]?.toString() ?: "general")
     "memory_recall" -> memoryRecall(args["query"]?.toString() ?: "")
     else -> "Unknown tool: $name"
   }
 
-  private suspend fun searchWeb(query: String): String = withContext(Dispatchers.IO) {
-    val req = Request.Builder().url("$searchUrl/search?q=${Uri.encode(query)}&format=json&categories=general").build()
+  private suspend fun search(query: String, category: String): String = withContext(Dispatchers.IO) {
+    val req = Request.Builder().url("$searchUrl/search?q=${Uri.encode(query)}&format=json&categories=$category").build()
     val body = http.newCall(req).execute().use { it.body?.string() ?: "" }
     val results = JSONObject(body).optJSONArray("results") ?: return@withContext "No results"
-    buildString {
-      for (i in 0 until minOf(results.length(), 8)) {
-        val r = results.getJSONObject(i)
-        appendLine("${r.optString("title")}\n${r.optString("url")}\n${r.optString("content")}\n")
+    if (category == "images") {
+      buildString {
+        for (i in 0 until minOf(results.length(), 6)) {
+          val r = results.getJSONObject(i)
+          appendLine("![${r.optString("title")}](${r.optString("img_src")})")
+        }
       }
-    }
-  }
-
-  private suspend fun searchImages(query: String): String = withContext(Dispatchers.IO) {
-    val req = Request.Builder().url("$searchUrl/search?q=${Uri.encode(query)}&format=json&categories=images").build()
-    val body = http.newCall(req).execute().use { it.body?.string() ?: "" }
-    val results = JSONObject(body).optJSONArray("results") ?: return@withContext "No results"
-    buildString {
-      for (i in 0 until minOf(results.length(), 6)) {
-        val r = results.getJSONObject(i)
-        appendLine("![${r.optString("title")}](${r.optString("img_src")})")
+    } else {
+      buildString {
+        for (i in 0 until minOf(results.length(), 8)) {
+          val r = results.getJSONObject(i)
+          appendLine("${r.optString("title")}\n${r.optString("url")}\n${r.optString("content")}\n")
+        }
       }
     }
   }
 
   private suspend fun fetchUrl(url: String, mode: String): String = withContext(Dispatchers.IO) {
+    if (mode == "image") return@withContext saveImage(url, "")
     val req = Request.Builder().url(url).header("User-Agent", "AIOPulse/1.0").build()
-    val resp = http.newCall(req).execute()
-    val body = resp.body?.string()?.take(12000) ?: ""
+    val body = http.newCall(req).execute().use { it.body?.string()?.take(12000) ?: "" }
     when (mode) {
       "raw" -> body
       "md" -> body // TODO: HTML→markdown conversion

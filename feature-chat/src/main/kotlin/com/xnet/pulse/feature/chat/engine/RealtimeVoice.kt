@@ -324,9 +324,8 @@ Tool Guidance:
       })
     }
     // All AIO Pulse tools
-    tool("search_web", "Search the web for current information", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}""")
-    tool("search_images", "Search for images on the web", """{"type":"object","properties":{"query":{"type":"string","description":"Image search query"}},"required":["query"]}""")
-    tool("fetch_url", "Fetch a URL and return text content", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"text, md, or raw"}},"required":["url"]}""")
+    tool("search", "Search the web. Use category 'images' for image results, 'general' (default) for web", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"category":{"type":"string","description":"general or images"}},"required":["query"]}""")
+    tool("fetch_url", "Fetch URL content. Modes: text (default), md, raw, image (saves locally)", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"text, md, raw, or image"}},"required":["url"]}""")
     tool("list_directory", "List directory contents", """{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":["path"]}""")
     tool("read_file", "Read file contents", """{"type":"object","properties":{"path":{"type":"string","description":"File path"}},"required":["path"]}""")
     tool("write_file", "Write content to a file", """{"type":"object","properties":{"path":{"type":"string","description":"File path"},"content":{"type":"string","description":"File content"}},"required":["path","content"]}""")
@@ -335,7 +334,6 @@ Tool Guidance:
     tool("get_location", "Get device GPS location", """{"type":"object","properties":{}}""")
     tool("open_intent", "Open a URL, map, or app on the device", """{"type":"object","properties":{"uri":{"type":"string","description":"URI to open"}},"required":["uri"]}""")
     tool("image_generate", "Generate an image from a text prompt", """{"type":"object","properties":{"prompt":{"type":"string","description":"Image generation prompt"}},"required":["prompt"]}""")
-    tool("save_image", "Download an image from URL and save locally for display in chat", """{"type":"object","properties":{"url":{"type":"string","description":"Image URL to download"},"filename":{"type":"string","description":"Optional filename"}},"required":["url"]}""")
     tool("memory_store", "Remember a fact across conversations", """{"type":"object","properties":{"key":{"type":"string","description":"Short key"},"content":{"type":"string","description":"Fact to remember"},"category":{"type":"string","description":"Category"}},"required":["key","content"]}""")
     tool("memory_recall", "Search stored memories", """{"type":"object","properties":{"query":{"type":"string","description":"Search term"}},"required":["query"]}""")
     return decls
