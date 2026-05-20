@@ -148,10 +148,22 @@ class ChatViewModel @Inject constructor(
   private fun buildApiMessages(): List<JSONObject> {
     val system = JSONObject().put("role", "system").put("content", SYSTEM_PROMPT)
     val msgs = _messages.value.filter { it.role != Role.TOOL }.map { msg ->
-      if (msg.apiImageData.isNotEmpty() && msg.role == Role.USER) {
+      val images = msg.apiImageData.ifEmpty {
+        // Re-encode from file paths if apiImageData lost (after DB reload)
+        msg.imagePaths.filter { it.startsWith("file://") }.mapNotNull { path ->
+          try {
+            val file = java.io.File(path.removePrefix("file://"))
+            if (file.exists()) {
+              val bytes = file.readBytes()
+              "data:image/jpeg;base64,${android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)}"
+            } else null
+          } catch (_: Exception) { null }
+        }
+      }
+      if (images.isNotEmpty() && msg.role == Role.USER) {
         val contentArr = JSONArray()
         if (msg.content.isNotBlank()) contentArr.put(JSONObject().put("type", "text").put("text", msg.content))
-        msg.apiImageData.filter { it.startsWith("data:") }.forEach { b64 ->
+        images.filter { it.startsWith("data:") }.forEach { b64 ->
           contentArr.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", b64)))
         }
         JSONObject().put("role", "user").put("content", contentArr)
@@ -198,6 +210,16 @@ class ChatViewModel @Inject constructor(
           is RealtimeVoice.Event.Error -> android.util.Log.e("RealtimeVoice", "Event: ${event.msg}")
           is RealtimeVoice.Event.Connected -> android.util.Log.i("RealtimeVoice", "Connected!")
           is RealtimeVoice.Event.Disconnected -> android.util.Log.i("RealtimeVoice", "Disconnected")
+          is RealtimeVoice.Event.InputTranscription -> {
+            val msg = ChatMessage(id = java.util.UUID.randomUUID().toString(), conversationId = currentConvId, role = Role.USER, content = event.text, timestamp = System.currentTimeMillis(), status = MessageStatus.SENT)
+            _messages.value = _messages.value + msg
+            viewModelScope.launch { dao.insertMessage(msg.toEntity()) }
+          }
+          is RealtimeVoice.Event.OutputTranscription -> {
+            val msg = ChatMessage(id = java.util.UUID.randomUUID().toString(), conversationId = currentConvId, role = Role.ASSISTANT, content = event.text, timestamp = System.currentTimeMillis(), status = MessageStatus.SENT)
+            _messages.value = _messages.value + msg
+            viewModelScope.launch { dao.insertMessage(msg.toEntity()) }
+          }
           else -> {}
         }
       }
