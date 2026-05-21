@@ -15,6 +15,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -248,17 +250,32 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
         "Sulafat" to "Sophie"
       )
       var voiceExpanded by remember { mutableStateOf(false) }
-      Box {
-        OutlinedButton(onClick = { voiceExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-          Text(voiceDisplayNames[voiceName] ?: voiceName, modifier = Modifier.weight(1f))
-          Text(voices.firstOrNull { it.first == voiceName }?.second ?: "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        DropdownMenu(expanded = voiceExpanded, onDismissRequest = { voiceExpanded = false }) {
-          voices.forEach { (apiName, style) ->
-            DropdownMenuItem(
-              text = { Row { Text(voiceDisplayNames[apiName] ?: apiName, modifier = Modifier.weight(1f)); Text(style, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-              onClick = { scope.launch { prefs.set(ThemePrefs.VOICE_NAME, apiName) }; voiceExpanded = false }
-            )
+      Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        onClick = { voiceExpanded = !voiceExpanded },
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column {
+          Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(voiceDisplayNames[voiceName] ?: voiceName, modifier = Modifier.weight(1f), fontSize = 14.sp)
+            Text(voices.firstOrNull { it.first == voiceName }?.second ?: "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(if (voiceExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(20.dp))
+          }
+          if (voiceExpanded) {
+            HorizontalDivider()
+            Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState())) {
+              voices.forEach { (apiName, style) ->
+                val selected = apiName == voiceName
+                Row(
+                  Modifier.fillMaxWidth().clickable { scope.launch { prefs.set(ThemePrefs.VOICE_NAME, apiName) } }.background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent).padding(horizontal = 12.dp, vertical = 10.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(voiceDisplayNames[apiName] ?: apiName, modifier = Modifier.weight(1f), fontSize = 14.sp, color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+                  Text(style, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+              }
+            }
           }
         }
       }
