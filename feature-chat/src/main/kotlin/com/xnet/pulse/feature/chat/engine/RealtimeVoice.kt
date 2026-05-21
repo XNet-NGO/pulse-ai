@@ -234,6 +234,7 @@ Tool Guidance:
         put("turnComplete", false)
       })
     }
+    android.util.Log.i(TAG, "Sending history (${messages.size} msgs): ${msg.toString().take(500)}")
     webSocket?.send(msg.toString())
   }
 
@@ -330,6 +331,9 @@ Tool Guidance:
       })
       put("systemInstruction", JSONObject().apply {
         put("parts", JSONArray().apply { put(JSONObject().apply { put("text", SYSTEM_PROMPT) }) })
+      })
+      put("historyConfig", JSONObject().apply {
+        put("initialHistoryInClientContent", true)
       })
       put("tools", JSONArray().apply {
         put(JSONObject().apply { put("functionDeclarations", buildToolDeclarations()) })
