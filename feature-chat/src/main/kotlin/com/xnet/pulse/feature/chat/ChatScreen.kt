@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Call
@@ -87,8 +89,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     ModalBottomSheet(onDismissRequest = { showDrawer = false }) {
       Column(Modifier.padding(16.dp)) {
         TextButton(onClick = { viewModel.newConversation(); showDrawer = false }) { Text("+ New Chat") }
-        TextButton(onClick = { showDrawer = false; showLibrary = true }) { Text("📁 Library") }
-        TextButton(onClick = { showDrawer = false; showSettings = true }) { Text("⚙️ Settings") }
+        TextButton(onClick = { showDrawer = false; showLibrary = true }) { Icon(Icons.Default.Folder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Library") }
+        TextButton(onClick = { showDrawer = false; showSettings = true }) { Icon(Icons.Default.Settings, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Settings") }
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         conversations.forEach { conv ->
           ListItem(
