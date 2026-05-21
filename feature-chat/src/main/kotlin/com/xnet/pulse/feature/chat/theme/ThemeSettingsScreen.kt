@@ -223,28 +223,41 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
 
       // Voice picker
       val voices = listOf(
-        "Aoede" to "Breezy", "Puck" to "Upbeat", "Kore" to "Firm", "Charon" to "Informative",
-        "Fenrir" to "Excitable", "Leda" to "Youthful", "Zephyr" to "Bright", "Orus" to "Firm",
-        "Callirrhoe" to "Easy-going", "Enceladus" to "Breathy", "Iapetus" to "Clear",
-        "Umbriel" to "Easy-going", "Algieba" to "Smooth", "Despina" to "Smooth",
-        "Autonoe" to "Bright", "Erinome" to "Clear", "Algenib" to "Gravelly",
-        "Rasalgethi" to "Informative", "Laomedeia" to "Upbeat", "Achernar" to "Soft",
-        "Alnilam" to "Firm", "Schedar" to "Even", "Gacrux" to "Mature",
-        "Pulcherrima" to "Forward", "Achird" to "Friendly", "Zubenelgenubi" to "Casual",
-        "Vindemiatrix" to "Gentle", "Sadachbia" to "Lively", "Sadaltager" to "Knowledgeable",
-        "Sulafat" to "Warm"
+        "Aoede" to "♀ Breezy", "Puck" to "♂ Upbeat", "Kore" to "♀ Firm", "Charon" to "♂ Informative",
+        "Fenrir" to "♂ Excitable", "Leda" to "♀ Youthful", "Zephyr" to "♀ Bright", "Orus" to "♂ Firm",
+        "Callirrhoe" to "♀ Easy-going", "Enceladus" to "♂ Breathy", "Iapetus" to "♂ Clear",
+        "Umbriel" to "♂ Easy-going", "Algieba" to "♂ Smooth", "Despina" to "♀ Smooth",
+        "Autonoe" to "♀ Bright", "Erinome" to "♀ Clear", "Algenib" to "♂ Gravelly",
+        "Rasalgethi" to "♂ Informative", "Laomedeia" to "♀ Upbeat", "Achernar" to "♀ Soft",
+        "Alnilam" to "♂ Firm", "Schedar" to "♂ Even", "Gacrux" to "♀ Mature",
+        "Pulcherrima" to "♀ Forward", "Achird" to "♂ Friendly", "Zubenelgenubi" to "♂ Casual",
+        "Vindemiatrix" to "♀ Gentle", "Sadachbia" to "♂ Lively", "Sadaltager" to "♂ Knowledgeable",
+        "Sulafat" to "♀ Warm"
+      )
+      // Display names mapped to API voice names
+      val voiceDisplayNames = mapOf(
+        "Aoede" to "Aria", "Puck" to "Jake", "Kore" to "Maya", "Charon" to "Marcus",
+        "Fenrir" to "Tyler", "Leda" to "Lily", "Zephyr" to "Zoe", "Orus" to "Owen",
+        "Callirrhoe" to "Chloe", "Enceladus" to "Ethan", "Iapetus" to "Ian",
+        "Umbriel" to "Blake", "Algieba" to "Alex", "Despina" to "Dana",
+        "Autonoe" to "Amber", "Erinome" to "Emma", "Algenib" to "Grant",
+        "Rasalgethi" to "Ryan", "Laomedeia" to "Layla", "Achernar" to "Ava",
+        "Alnilam" to "Nathan", "Schedar" to "Scott", "Gacrux" to "Grace",
+        "Pulcherrima" to "Paige", "Achird" to "Adam", "Zubenelgenubi" to "Zane",
+        "Vindemiatrix" to "Violet", "Sadachbia" to "Sam", "Sadaltager" to "Sean",
+        "Sulafat" to "Sophie"
       )
       var voiceExpanded by remember { mutableStateOf(false) }
       Box {
         OutlinedButton(onClick = { voiceExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-          Text("$voiceName", modifier = Modifier.weight(1f))
+          Text(voiceDisplayNames[voiceName] ?: voiceName, modifier = Modifier.weight(1f))
           Text(voices.firstOrNull { it.first == voiceName }?.second ?: "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         DropdownMenu(expanded = voiceExpanded, onDismissRequest = { voiceExpanded = false }) {
-          voices.forEach { (name, style) ->
+          voices.forEach { (apiName, style) ->
             DropdownMenuItem(
-              text = { Row { Text(name, modifier = Modifier.weight(1f)); Text(style, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-              onClick = { scope.launch { prefs.set(ThemePrefs.VOICE_NAME, name) }; voiceExpanded = false }
+              text = { Row { Text(voiceDisplayNames[apiName] ?: apiName, modifier = Modifier.weight(1f)); Text(style, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+              onClick = { scope.launch { prefs.set(ThemePrefs.VOICE_NAME, apiName) }; voiceExpanded = false }
             )
           }
         }
