@@ -219,6 +219,24 @@ Tool Guidance:
     webSocket?.send(msg.toString())
   }
 
+  fun sendHistory(messages: List<Pair<String, String>>) {
+    if (messages.isEmpty()) return
+    val msg = JSONObject().apply {
+      put("clientContent", JSONObject().apply {
+        put("turns", JSONArray().apply {
+          messages.forEach { (role, content) ->
+            put(JSONObject().apply {
+              put("role", role)
+              put("parts", JSONArray().apply { put(JSONObject().apply { put("text", content) }) })
+            })
+          }
+        })
+        put("turnComplete", true)
+      })
+    }
+    webSocket?.send(msg.toString())
+  }
+
   private fun startCapture(ws: WebSocket) {
     val bufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE_IN, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
     if (bufSize <= 0) return

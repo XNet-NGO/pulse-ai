@@ -217,7 +217,14 @@ class ChatViewModel @Inject constructor(
       realtimeVoice.connect(GOOGLE_AI_KEY, voice, "medium").collect { event ->
         when (event) {
           is RealtimeVoice.Event.Error -> android.util.Log.e("RealtimeVoice", "Event: ${event.msg}")
-          is RealtimeVoice.Event.Connected -> android.util.Log.i("RealtimeVoice", "Connected!")
+          is RealtimeVoice.Event.Connected -> {
+            android.util.Log.i("RealtimeVoice", "Connected!")
+            // Send existing conversation history to Gemini
+            val history = _messages.value.filter { it.content.isNotBlank() && it.role in listOf(Role.USER, Role.ASSISTANT) }
+              .takeLast(20)
+              .map { (if (it.role == Role.USER) "user" else "model") to it.content }
+            realtimeVoice.sendHistory(history)
+          }
           is RealtimeVoice.Event.Disconnected -> android.util.Log.i("RealtimeVoice", "Disconnected")
           is RealtimeVoice.Event.InputTranscription -> {
             if (currentInputId == null) {
