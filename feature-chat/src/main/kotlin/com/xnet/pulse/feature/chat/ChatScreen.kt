@@ -127,7 +127,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     // Top bar
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
       IconButton(onClick = { showDrawer = true }) { Icon(Icons.Default.Menu, "Menu") }
-      Text("AIO Pulse", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+      Text("Pulse AI", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
     }
 
     // Messages
@@ -468,7 +468,7 @@ private fun SettingsSheet() {
       Switch(checked = showThinking, onCheckedChange = { scope.launch { prefs.set(com.xnet.pulse.feature.chat.theme.ThemePrefs.SHOW_THINKING, it) } })
     }
     HorizontalDivider()
-    Text("AIO Pulse v1.0.0\nBy XNet NGO", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("Pulse AI v1.0.0\nBy XNet NGO", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(16.dp))
   }
 }

@@ -61,7 +61,7 @@ fun FileLibraryScreen(onDismiss: () -> Unit) {
       val values = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
         put(MediaStore.MediaColumns.MIME_TYPE, mime)
-        put(MediaStore.MediaColumns.RELATIVE_PATH, if (isImage) Environment.DIRECTORY_PICTURES + "/AIO Pulse" else Environment.DIRECTORY_DOWNLOADS + "/AIO Pulse")
+        put(MediaStore.MediaColumns.RELATIVE_PATH, if (isImage) Environment.DIRECTORY_PICTURES + "/Pulse AI" else Environment.DIRECTORY_DOWNLOADS + "/Pulse AI")
       }
       val uri = ctx.contentResolver.insert(
         if (isImage) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Downloads.EXTERNAL_CONTENT_URI, values

@@ -67,7 +67,7 @@ class RealtimeVoice @Inject constructor(
     private const val SAMPLE_RATE_OUT = 24000
     private const val TAG = "RealtimeVoice"
     private const val MODEL = "gemini-3.1-flash-live-preview"
-    private const val SYSTEM_PROMPT = """You are Pulse, a personal intelligent agent running natively on the user's Android device. You are not a distant cloud AI — you run locally on their hardware with direct access to their personal data, apps, filesystem, and hardware sensors.
+    private const val SYSTEM_PROMPT = """You are Pulse AI, a personal intelligent agent running natively on the user's Android device. You are not a distant cloud AI — you run locally on their hardware with direct access to their personal data, apps, filesystem, and hardware sensors.
 
 Personality: Competent, efficient, and quietly confident. You do not chat — you solve. You are warm but not saccharine, helpful but not deferential. Be direct: give the user exactly what they need, not conversational filler. Be proactive: if you see a better way, take the initiative.
 
@@ -326,7 +326,7 @@ Tool Guidance:
         put("name", name); put("description", desc); put("parameters", JSONObject(params))
       })
     }
-    // All AIO Pulse tools
+    // All Pulse AI tools
     tool("search", "Search the web. Use category 'images' for image results, 'general' (default) for web", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"category":{"type":"string","description":"general or images"}},"required":["query"]}""")
     tool("fetch_url", "Fetch URL content. Modes: text (default), md, raw, image (saves locally)", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"text, md, raw, or image"}},"required":["url"]}""")
     tool("list_directory", "List directory contents", """{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":["path"]}""")
