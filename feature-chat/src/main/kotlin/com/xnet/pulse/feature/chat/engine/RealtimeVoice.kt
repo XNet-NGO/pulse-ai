@@ -231,7 +231,7 @@ Tool Guidance:
             })
           }
         })
-        put("turnComplete", true)
+        put("turnComplete", false)
       })
     }
     webSocket?.send(msg.toString())
