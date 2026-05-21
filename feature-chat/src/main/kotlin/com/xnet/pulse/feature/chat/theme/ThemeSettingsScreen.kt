@@ -64,7 +64,6 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
   val showToolActivity by prefs.showToolActivity.collectAsState(initial = true)
   val uiOpacity by prefs.uiOpacity.collectAsState(initial = 1f)
   val voiceName by prefs.voiceName.collectAsState(initial = "Aoede")
-  val thinkingLevel by prefs.thinkingLevel.collectAsState(initial = "minimal")
   val useUiColor by prefs.useUiColor.collectAsState(initial = false)
   val uiColor by prefs.uiColor.collectAsState(initial = null)
   val useCustomText by prefs.useCustomText.collectAsState(initial = false)
@@ -248,20 +247,6 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
               onClick = { scope.launch { prefs.set(ThemePrefs.VOICE_NAME, name) }; voiceExpanded = false }
             )
           }
-        }
-      }
-
-      Spacer(Modifier.height(8.dp))
-      Text("Thinking level", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      val levels = listOf("minimal" to "Fastest", "low" to "Fast", "medium" to "Balanced", "high" to "Thorough")
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        levels.forEach { (level, label) ->
-          val selected = thinkingLevel == level
-          FilterChip(
-            selected = selected,
-            onClick = { scope.launch { prefs.set(ThemePrefs.THINKING_LEVEL, level) } },
-            label = { Text(label, fontSize = 12.sp) },
-          )
         }
       }
 

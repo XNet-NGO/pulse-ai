@@ -209,13 +209,12 @@ class ChatViewModel @Inject constructor(
     viewModelScope.launch {
       val prefs = com.xnet.pulse.feature.chat.theme.ThemePrefs(appCtx)
       val voice = prefs.voiceName.first()
-      val thinking = prefs.thinkingLevel.first()
       var currentInputId: String? = null
       var currentOutputId: String? = null
       val inputBuf = StringBuilder()
       val outputBuf = StringBuilder()
 
-      realtimeVoice.connect(GOOGLE_AI_KEY, voice, thinking).collect { event ->
+      realtimeVoice.connect(GOOGLE_AI_KEY, voice, "medium").collect { event ->
         when (event) {
           is RealtimeVoice.Event.Error -> android.util.Log.e("RealtimeVoice", "Event: ${event.msg}")
           is RealtimeVoice.Event.Connected -> android.util.Log.i("RealtimeVoice", "Connected!")
