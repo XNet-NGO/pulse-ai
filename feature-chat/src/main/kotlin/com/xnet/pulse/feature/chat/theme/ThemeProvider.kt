@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 data class ThemeState(
-  val mode: String = "dark",
+  val mode: String = "system",
   val isDark: Boolean = true,
   val primaryColor: Color? = null,
   val secondaryColor: Color? = null,
@@ -53,7 +53,7 @@ fun ThemeProvider(content: @Composable () -> Unit) {
   val ctx = LocalContext.current
   val prefs = remember { ThemePrefs(ctx) }
 
-  val mode = prefs.themeMode.collectAsState(initial = "dark").value
+  val mode = prefs.themeMode.collectAsState(initial = "system").value
   val sysDark = isSystemInDarkTheme()
   val isDark = when (mode) {
     "light" -> false

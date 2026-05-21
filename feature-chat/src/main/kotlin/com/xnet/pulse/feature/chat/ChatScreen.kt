@@ -441,7 +441,7 @@ private fun SettingsSheet() {
   val ctx = LocalContext.current
   val prefs = remember { com.xnet.pulse.feature.chat.theme.ThemePrefs(ctx) }
   val scope = rememberCoroutineScope()
-  val themeMode by prefs.themeMode.collectAsState(initial = "dark")
+  val themeMode by prefs.themeMode.collectAsState(initial = "system")
   var autoRead by remember { mutableStateOf(false) }
   val showThinking by prefs.showThinking.collectAsState(initial = true)
 

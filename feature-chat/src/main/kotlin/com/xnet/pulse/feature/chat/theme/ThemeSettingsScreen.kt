@@ -43,7 +43,7 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
   val scope = rememberCoroutineScope()
 
   // Collect all state
-  val themeMode by prefs.themeMode.collectAsState(initial = "dark")
+  val themeMode by prefs.themeMode.collectAsState(initial = "system")
   val useCustomColors by prefs.useCustomColors.collectAsState(initial = false)
   val primaryColor by prefs.primaryColor.collectAsState(initial = null)
   val secondaryColor by prefs.secondaryColor.collectAsState(initial = null)
