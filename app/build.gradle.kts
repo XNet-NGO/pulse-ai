@@ -17,11 +17,21 @@ android {
     versionName = "1.0.0"
   }
 
+  signingConfigs {
+    create("release") {
+      storeFile = rootProject.file("release.keystore")
+      storePassword = "pulsexnet2026"
+      keyAlias = "pulse"
+      keyPassword = "pulsexnet2026"
+    }
+  }
+
   buildTypes {
     release {
-      isMinifyEnabled = true
-      isShrinkResources = true
+      isMinifyEnabled = false
+      isShrinkResources = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      signingConfig = signingConfigs.getByName("release")
     }
   }
 
@@ -57,6 +67,7 @@ dependencies {
   implementation("ru.noties:jlatexmath-android-font-cyrillic:0.2.0")
   implementation("ru.noties:jlatexmath-android-font-greek:0.2.0")
   implementation(libs.androidx.appcompat)
+  implementation("androidx.core:core-splashscreen:1.0.1")
 
   val bom = platform(libs.androidx.compose.bom)
   implementation(bom)

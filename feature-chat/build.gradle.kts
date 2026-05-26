@@ -40,6 +40,7 @@ dependencies {
   ksp(libs.hilt.compiler)
   implementation(libs.okhttp)
   implementation(libs.okhttp.sse)
+  implementation(libs.play.services.location)
   implementation(libs.jtokkit)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.androidx.worker)

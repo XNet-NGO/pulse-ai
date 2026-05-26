@@ -31,7 +31,7 @@ class ToolExecutor @Inject constructor(
   private var searchUrl = "https://search.xnet.ngo"
 
   fun buildToolDefs(): List<ToolDef> = listOf(
-    ToolDef("search", "Search the web. Use category 'images' for image results, 'general' (default) for web results.", """{"type":"object","properties":{"query":{"type":"string"},"category":{"type":"string"}},"required":["query"]}""", true),
+    ToolDef("search", "Search the web. Use category 'images' for image results, 'general' (default) for web results. Set count to control number of results (default 8, max 20).", """{"type":"object","properties":{"query":{"type":"string"},"category":{"type":"string"},"count":{"type":"integer"}},"required":["query"]}""", true),
     ToolDef("fetch_url", "Fetch a URL. Modes: text (default), md, raw, image (saves image locally for display).", """{"type":"object","properties":{"url":{"type":"string"},"mode":{"type":"string"}},"required":["url"]}""", true),
     ToolDef("list_directory", "List directory contents.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
     ToolDef("read_file", "Read file contents.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
@@ -46,7 +46,7 @@ class ToolExecutor @Inject constructor(
   )
 
   suspend fun execute(name: String, args: Map<String, Any?>): String = when (name) {
-    "search" -> search(args["query"]?.toString() ?: "", args["category"]?.toString() ?: "general")
+    "search" -> search(args["query"]?.toString() ?: "", args["category"]?.toString() ?: "general", (args["count"] as? Number)?.toInt() ?: 8)
     "fetch_url" -> fetchUrl(args["url"]?.toString() ?: "", args["mode"]?.toString() ?: "text")
     "list_directory" -> listDirectory(args["path"]?.toString() ?: "/")
     "read_file" -> readFile(args["path"]?.toString() ?: "")
@@ -61,22 +61,53 @@ class ToolExecutor @Inject constructor(
     else -> "Unknown tool: $name"
   }
 
-  private suspend fun search(query: String, category: String): String = withContext(Dispatchers.IO) {
+  private suspend fun search(query: String, category: String, count: Int): String = withContext(Dispatchers.IO) {
+    val n = count.coerceIn(1, 20)
     val req = Request.Builder().url("$searchUrl/search?q=${Uri.encode(query)}&format=json&categories=$category").build()
     val body = http.newCall(req).execute().use { it.body?.string() ?: "" }
-    val results = JSONObject(body).optJSONArray("results") ?: return@withContext "No results"
+    val json = JSONObject(body)
+    val results = json.optJSONArray("results") ?: return@withContext "No results"
     if (category == "images") {
       buildString {
-        for (i in 0 until minOf(results.length(), 6)) {
+        appendLine("Image results for: \"$query\" (${minOf(results.length(), n)} results)\n")
+        for (i in 0 until minOf(results.length(), n)) {
           val r = results.getJSONObject(i)
-          appendLine("![${r.optString("title")}](${r.optString("img_src")})")
+          val title = r.optString("title", "Untitled")
+          val imgSrc = r.optString("img_src", "")
+          val source = r.optString("source", r.optString("engine", ""))
+          val pageUrl = r.optString("url", "")
+          val w = r.optInt("img_width", 0)
+          val h = r.optInt("img_height", 0)
+          val dims = if (w > 0 && h > 0) "${w}x${h}" else ""
+          appendLine("[${i + 1}] $title")
+          if (dims.isNotEmpty()) appendLine("    Size: $dims")
+          if (source.isNotEmpty()) appendLine("    Source: $source")
+          appendLine("    Image: $imgSrc")
+          if (pageUrl.isNotEmpty() && pageUrl != imgSrc) appendLine("    Page: $pageUrl")
+          appendLine("    Markdown: ![${title}]($imgSrc)")
+          appendLine()
         }
       }
     } else {
       buildString {
-        for (i in 0 until minOf(results.length(), 8)) {
+        appendLine("Search results for: \"$query\" (${minOf(results.length(), n)} results)\n")
+        for (i in 0 until minOf(results.length(), n)) {
           val r = results.getJSONObject(i)
-          appendLine("${r.optString("title")}\n${r.optString("url")}\n${r.optString("content")}\n")
+          val title = r.optString("title", "Untitled")
+          val url = r.optString("url", "")
+          val content = r.optString("content", "")
+          val engines = r.optJSONArray("engines")?.let { arr ->
+            (0 until arr.length()).map { arr.getString(it) }.joinToString(", ")
+          } ?: ""
+          val date = r.optString("publishedDate", "").takeIf { it.isNotBlank() }
+          val domain = try { java.net.URI(url).host ?: "" } catch (_: Exception) { "" }
+          appendLine("[${i + 1}] $title")
+          appendLine("    URL: $url")
+          if (domain.isNotEmpty()) appendLine("    Domain: $domain")
+          if (date != null) appendLine("    Published: $date")
+          if (engines.isNotEmpty()) appendLine("    Engines: $engines")
+          if (content.isNotEmpty()) appendLine("    Snippet: $content")
+          appendLine()
         }
       }
     }
@@ -179,13 +210,34 @@ class ToolExecutor @Inject constructor(
     return "Exported to ${output.name} (${output.length() / 1024}KB)\n📄 file://${output.absolutePath}"
   }
 
-  private fun getLocation(): String {
-    return try {
-      val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-      val loc = lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
-        ?: lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
-        ?: return "Location unavailable — enable GPS or grant permission"
-      "Latitude: ${loc.latitude}, Longitude: ${loc.longitude}, Accuracy: ${loc.accuracy}m"
+  private suspend fun getLocation(): String = withContext(Dispatchers.IO) {
+    try {
+      val client = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(ctx)
+      val loc = kotlinx.coroutines.suspendCancellableCoroutine<android.location.Location?> { cont ->
+        val req = com.google.android.gms.location.CurrentLocationRequest.Builder()
+          .setPriority(com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY)
+          .setMaxUpdateAgeMillis(10_000L)
+          .build()
+        client.getCurrentLocation(req, null)
+          .addOnSuccessListener { cont.resume(it) { } }
+          .addOnFailureListener { cont.resume(null) { } }
+      } ?: return@withContext "Location unavailable — enable GPS or grant permission"
+
+      val result = buildString {
+        appendLine("Latitude: ${loc.latitude}")
+        appendLine("Longitude: ${loc.longitude}")
+        if (loc.hasAltitude()) appendLine("Altitude: ${"%.1f".format(loc.altitude)}m")
+        if (loc.hasSpeed()) appendLine("Speed: ${"%.1f".format(loc.speed * 3.6)} km/h")
+        appendLine("Accuracy: ${"%.1f".format(loc.accuracy)}m")
+      }
+
+      val address = try {
+        val geocoder = android.location.Geocoder(ctx, java.util.Locale.US)
+        val addrs = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+        addrs?.firstOrNull()?.getAddressLine(0)
+      } catch (_: Exception) { null }
+
+      if (address != null) "$result\nAddress: $address" else result
     } catch (e: SecurityException) { "Location permission not granted" }
   }
 

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+  <aapt:attr name="android:drawable">
+    <vector
+        android:width="108dp"
+        android:height="108dp"
+        android:viewportWidth="108"
+        android:viewportHeight="108">
+      <group android:name="ring">
+        <path
+            android:name="circle"
+            android:pathData="M54,27 A27,27 0 1,1 53.99,27"
+            android:strokeColor="#00E5FF"
+            android:strokeWidth="2.5"
+            android:fillColor="#00000000"
+            android:trimPathEnd="0"/>
+      </group>
+      <path
+          android:name="wave"
+          android:pathData="M30,54 L40,54 L44,40 L48,68 L52,36 L56,64 L60,44 L64,54 L78,54"
+          android:strokeColor="#00E5FF"
+          android:strokeWidth="3"
+          android:strokeLineCap="round"
+          android:strokeLineJoin="round"
+          android:fillColor="#00000000"
+          android:trimPathEnd="0"/>
+      <path
+          android:name="dot"
+          android:pathData="M54,54 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0"
+          android:fillColor="#00E5FF"
+          android:fillAlpha="0"/>
+    </vector>
+  </aapt:attr>
+
+  <!-- Ring draws in -->
+  <target android:name="circle">
+    <aapt:attr name="android:animation">
+      <objectAnimator
+          android:propertyName="trimPathEnd"
+          android:valueFrom="0"
+          android:valueTo="1"
+          android:duration="800"
+          android:interpolator="@android:interpolator/decelerate_cubic"/>
+    </aapt:attr>
+  </target>
+
+  <!-- Wave draws in after ring -->
+  <target android:name="wave">
+    <aapt:attr name="android:animation">
+      <objectAnimator
+          android:propertyName="trimPathEnd"
+          android:valueFrom="0"
+          android:valueTo="1"
+          android:startOffset="400"
+          android:duration="600"
+          android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+
+  <!-- Dot fades in -->
+  <target android:name="dot">
+    <aapt:attr name="android:animation">
+      <objectAnimator
+          android:propertyName="fillAlpha"
+          android:valueFrom="0"
+          android:valueTo="1"
+          android:startOffset="700"
+          android:duration="300"
+          android:interpolator="@android:interpolator/accelerate_decelerate"/>
+    </aapt:attr>
+  </target>
+</animated-vector>

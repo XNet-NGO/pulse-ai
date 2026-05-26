@@ -11,3 +11,10 @@
 
 .kotlin/
 local.properties
+
+# Keystores
+*.keystore
+*.jks
+
+# JVM crash logs
+hs_err_pid*.log
