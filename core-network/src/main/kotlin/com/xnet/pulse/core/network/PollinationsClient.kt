@@ -30,9 +30,8 @@ import javax.net.ssl.X509TrustManager
 class PollinationsClient @Inject constructor() {
 
   companion object {
-    private const val BASE_URL = "https://gen.pollinations.ai/v1"
+    private const val BASE_URL = "https://inf.xnet.ngo/v1"
     private const val IMAGE_URL = "https://image.pollinations.ai/prompt"
-    private const val API_KEY = "REDACTED_KEY"
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
     private val REASONING_TAGS = listOf("think", "thinking", "thought")
     private const val MAX_RETRIES = 3
@@ -84,7 +83,7 @@ class PollinationsClient @Inject constructor() {
     }
   }
 
-  var apiKey: String = API_KEY
+  var apiKey: String = GatewayConfig.key
 
   fun stream(
     messages: List<JSONObject>,

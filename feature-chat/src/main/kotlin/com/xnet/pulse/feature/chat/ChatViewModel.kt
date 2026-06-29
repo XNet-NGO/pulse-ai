@@ -45,9 +45,10 @@ class ChatViewModel @Inject constructor(
   val conversations = dao.getConversations()
 
   private var currentConvId: String = UUID.randomUUID().toString()
-  private var model = "mistral-4"
+  private var model = "pollinations-pollen/mistral-4"
 
   init {
+    client.apiKey = com.xnet.pulse.core.network.GatewayConfig.key
     viewModelScope.launch { dao.insertConversation(ConversationEntity(id = currentConvId)) }
   }
 
@@ -214,16 +215,17 @@ class ChatViewModel @Inject constructor(
       val inputBuf = StringBuilder()
       val outputBuf = StringBuilder()
 
+      // Set history context before connecting so it's included in system prompt
+      val history = _messages.value.filter { it.content.isNotBlank() && it.role in listOf(Role.USER, Role.ASSISTANT) }
+        .takeLast(20)
+        .map { (if (it.role == Role.USER) "user" else "model") to it.content }
+      realtimeVoice.sendHistory(history)
+
       realtimeVoice.connect(GOOGLE_AI_KEY, voice, "medium").collect { event ->
         when (event) {
           is RealtimeVoice.Event.Error -> android.util.Log.e("RealtimeVoice", "Event: ${event.msg}")
           is RealtimeVoice.Event.Connected -> {
             android.util.Log.i("RealtimeVoice", "Connected!")
-            // Send existing conversation history to Gemini
-            val history = _messages.value.filter { it.content.isNotBlank() && it.role in listOf(Role.USER, Role.ASSISTANT) }
-              .takeLast(20)
-              .map { (if (it.role == Role.USER) "user" else "model") to it.content }
-            realtimeVoice.sendHistory(history)
           }
           is RealtimeVoice.Event.Disconnected -> android.util.Log.i("RealtimeVoice", "Disconnected")
           is RealtimeVoice.Event.InputTranscription -> {
@@ -287,7 +289,7 @@ class ChatViewModel @Inject constructor(
   private fun ChatMessage.toEntity() = MessageEntity(id, conversationId, role.name.lowercase(), content, reasoning, imagePaths.joinToString(","), timestamp, status.name.lowercase())
 
   companion object {
-    var GOOGLE_AI_KEY = "YOUR-GOOGLE-AI-KEY-HERE"
+    var GOOGLE_AI_KEY = com.xnet.pulse.core.network.GatewayConfig.key
     private const val SYSTEM_PROMPT = """You are Pulse AI, a personal intelligent agent running natively on the user's Android device. You are not a distant cloud AI — you run locally on their hardware with direct access to their personal data, apps, filesystem, and hardware sensors.
 
 Personality: Competent, efficient, and quietly confident. You do not chat — you solve. You are warm but not saccharine, helpful but not deferential. Be direct: give the user exactly what they need, not conversational filler. Be proactive: if you see a better way, take the initiative.

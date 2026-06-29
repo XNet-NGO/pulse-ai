@@ -52,7 +52,8 @@ class RealtimeVoice @Inject constructor(
   private var noiseSuppressor: NoiseSuppressor? = null
   private var captureJob: Job? = null
   private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-  private val playbackLock = Any()
+  private val playbackQueue = java.util.concurrent.LinkedBlockingQueue<ByteArray>()
+  private var playbackJob: Job? = null
 
   private val _isActive = MutableStateFlow(false)
   val isActive: StateFlow<Boolean> = _isActive
@@ -61,80 +62,101 @@ class RealtimeVoice @Inject constructor(
   val amplitude: StateFlow<Float> = _amplitude
 
   private var connecting = false
+  private var historyContext = ""
 
   companion object {
     private const val SAMPLE_RATE_IN = 16000
     private const val SAMPLE_RATE_OUT = 24000
     private const val TAG = "RealtimeVoice"
-    private const val MODEL = "gemini-3.1-flash-live-preview"
-    private const val SYSTEM_PROMPT = """You are Pulse AI, a personal intelligent agent running natively on the user's Android device. You are not a distant cloud AI — you run locally on their hardware with direct access to their personal data, apps, filesystem, and hardware sensors.
+    private const val SYSTEM_PROMPT = """You are Pulse AI, a personal intelligent agent running natively on the user's Android device.
 
-Personality: Competent, efficient, and quietly confident. You do not chat — you solve. You are warm but not saccharine, helpful but not deferential. Be direct: give the user exactly what they need, not conversational filler. Be proactive: if you see a better way, take the initiative.
+Personality: Competent, efficient, and quietly confident. You do not chat — you solve. Be direct and concise.
 
-Tone: Concise and conversational — this is a voice call. Use short sentences. Avoid hedging language. Match the user's energy — brief questions get brief answers, detailed questions get thorough responses.
-
-Principles:
-- Privacy first: you have access to deeply personal data — respect that. Never leak or log sensitive info unnecessarily.
-- Efficiency: minimize round-trips. Chain tools together to get answers in one go.
-- Autonomy: when the user gives you a goal, figure out the best path. You do not wait to be told every step.
+Tone: Concise and conversational — this is a voice call. Use short sentences. Match the user's energy.
 
 Constraints:
-- If you are about to do something significant (sending a message, deleting data, writing to important files), confirm with the user first.
-- If you are uncertain, say so and propose a path forward rather than guessing.
-- Do not access contacts or SMS unless the user explicitly asks.
-- Do not make up information — use tools to verify facts.
-
-Tool Guidance:
-- Use tools proactively when they can help — don't just describe what you could do.
-- For multi-step tasks, chain tools together.
-- When a tool fails, explain what happened and try an alternative approach.
-- Use search_web for current events and facts.
-- Report tool results naturally in speech — no markdown, no formatting, no URLs unless asked."""
+- If you are about to do something significant, confirm first.
+- If uncertain, say so and propose a path forward.
+- Do not make up information — use tools to verify facts."""
   }
 
   fun connect(apiKey: String, voiceName: String = "Aoede", thinkingLevel: String = "minimal"): Flow<Event> = callbackFlow {
     if (connecting || _isActive.value) { close(); return@callbackFlow }
     connecting = true
-    val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=$apiKey"
-    android.util.Log.i(TAG, "Connecting to Gemini Live API")
 
-    val request = Request.Builder().url(url).build()
+    val url = "wss://inf.xnet.ngo/ws/voice?model=google-ai-studio/gemini-3.1-flash-live-preview"
+    android.util.Log.i(TAG, "Connecting to gateway")
+
+    val request = Request.Builder()
+      .url(url)
+      .addHeader("Authorization", "Bearer $apiKey")
+      .build()
 
     webSocket = http.newWebSocket(request, object : WebSocketListener() {
       override fun onOpen(ws: WebSocket, response: Response) {
-        android.util.Log.i(TAG, "WebSocket open, sending setup")
-        ws.send(buildSetup(voiceName, thinkingLevel).toString())
+        android.util.Log.i(TAG, "WS open, sending setup")
+        // Send system prompt + tools — gateway forwards to Gemini
+        val setup = JSONObject().apply {
+          put("setup", JSONObject().apply {
+            put("systemPrompt", SYSTEM_PROMPT + historyContext)
+            put("tools", JSONArray().apply {
+              fun tool(name: String, desc: String, params: String) {
+                put(JSONObject().apply {
+                  put("name", name); put("description", desc); put("parameters", JSONObject(params))
+                })
+              }
+              tool("search_web", "Search the web for current information", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""")
+              tool("search_images", "Search for images on the web", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""")
+              tool("fetch_url", "Fetch a URL and return text content", """{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}""")
+              tool("read_file", "Read file contents", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""")
+              tool("write_file", "Write file", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""")
+              tool("list_directory", "List directory", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""")
+              tool("get_location", "Get device GPS location", """{"type":"object","properties":{}}""")
+              tool("open_intent", "Open a URL, map, or app on device", """{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}""")
+              tool("image_generate", "Generate an image from a text prompt", """{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"]}""")
+              tool("memory_store", "Remember a fact across conversations", """{"type":"object","properties":{"key":{"type":"string"},"content":{"type":"string"}},"required":["key","content"]}""")
+              tool("memory_recall", "Search stored memories", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""")
+            })
+          })
+        }
+        ws.send(setup.toString())
       }
 
-      override fun onMessage(ws: WebSocket, text: String) { handleMessage(ws, text) }
-      override fun onMessage(ws: WebSocket, bytes: ByteString) { handleMessage(ws, bytes.utf8()) }
-
-      override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-        android.util.Log.e(TAG, "Failed: ${t.message}", t)
-        trySend(Event.Error(t.message ?: "Connection failed"))
-        _isActive.value = false; connecting = false; close()
-      }
-
-      override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-        android.util.Log.i(TAG, "Closed: $code $reason")
-        trySend(Event.Disconnected)
-        _isActive.value = false; connecting = false; close()
-      }
-
-      private fun handleMessage(ws: WebSocket, text: String) {
+      override fun onMessage(ws: WebSocket, text: String) {
         try {
           val json = JSONObject(text)
 
-          if (json.has("setupComplete")) {
-            android.util.Log.i(TAG, "Setup complete")
+          // Gateway sends {"connected":true} when upstream Gemini is ready
+          if (json.optBoolean("connected", false)) {
+            android.util.Log.i(TAG, "Upstream ready, starting capture")
             trySend(Event.Connected)
             _isActive.value = true
+            connecting = false
             startCapture(ws)
             startPlayback()
             return
           }
 
-          // Tool calls from model
+          // Audio from model: {"audio":{"pcm":"base64..."}}
+          json.optJSONObject("audio")?.optString("pcm")?.let { b64 ->
+            if (b64.isNotBlank()) {
+              val pcm = Base64.decode(b64, Base64.DEFAULT)
+              playAudio(pcm)
+              trySend(Event.AudioChunk(pcm))
+            }
+          }
+
+          // Text from model: {"text":{"delta":"..."}}
+          json.optJSONObject("text")?.optString("delta")?.let {
+            if (it.isNotBlank()) trySend(Event.TextDelta(it))
+          }
+
+          // Turn signals
+          if (json.has("turnComplete")) trySend(Event.TurnComplete)
+          if (json.has("inputTranscription")) trySend(Event.InputTranscription(json.getString("inputTranscription")))
+          if (json.has("outputTranscription")) trySend(Event.OutputTranscription(json.getString("outputTranscription")))
+
+          // Tool calls
           json.optJSONObject("toolCall")?.let { tc ->
             val fcs = tc.optJSONArray("functionCalls") ?: return@let
             for (i in 0 until fcs.length()) {
@@ -142,47 +164,42 @@ Tool Guidance:
               val name = fc.getString("name")
               val id = fc.getString("id")
               val args = fc.optJSONObject("args") ?: JSONObject()
-              android.util.Log.i(TAG, "Tool call: $name($args)")
               trySend(Event.ToolCall(name, id, args))
-              // Execute tool and send response
               scope.launch {
                 val argsMap = mutableMapOf<String, Any?>()
                 args.keys().forEach { k -> argsMap[k] = args.opt(k) }
                 val result = try { toolExecutor.execute(name, argsMap) } catch (e: Exception) { "Error: ${e.message}" }
-                android.util.Log.i(TAG, "Tool result: ${result.take(100)}")
                 trySend(Event.ToolResult(name, result))
                 sendToolResponse(id, name, result)
               }
             }
-            return
           }
 
-          // Server content
-          val sc = json.optJSONObject("serverContent") ?: return
-          sc.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
-            for (i in 0 until parts.length()) {
-              val part = parts.getJSONObject(i)
-              part.optJSONObject("inlineData")?.optString("data")?.let { data ->
-                if (data.isNotBlank()) {
-                  val pcm = Base64.decode(data, Base64.DEFAULT)
-                  playAudio(pcm)
-                  trySend(Event.AudioChunk(pcm))
-                }
-              }
-              val t = part.optString("text", "")
-              if (t.isNotBlank()) trySend(Event.TextDelta(t))
-            }
-          }
-          sc.optJSONObject("inputTranscription")?.optString("text")?.let {
-            if (it.isNotBlank()) trySend(Event.InputTranscription(it))
-          }
-          sc.optJSONObject("outputTranscription")?.optString("text")?.let {
-            if (it.isNotBlank()) trySend(Event.OutputTranscription(it))
-          }
-          if (sc.optBoolean("turnComplete", false)) trySend(Event.TurnComplete)
+          // Error
+          if (json.has("error")) trySend(Event.Error(json.getString("error")))
+
         } catch (e: Exception) {
           android.util.Log.e(TAG, "Parse error: ${e.message}")
         }
+      }
+
+      override fun onMessage(ws: WebSocket, bytes: ByteString) {
+        // Binary audio frames
+        val pcm = bytes.toByteArray()
+        playAudio(pcm)
+        trySend(Event.AudioChunk(pcm))
+      }
+
+      override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+        android.util.Log.e(TAG, "WS failed: ${t.message}", t)
+        trySend(Event.Error(t.message ?: "Connection failed"))
+        _isActive.value = false; connecting = false; close()
+      }
+
+      override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+        android.util.Log.i(TAG, "WS closed: $code $reason")
+        trySend(Event.Disconnected)
+        _isActive.value = false; connecting = false; close()
       }
     })
 
@@ -195,7 +212,6 @@ Tool Guidance:
         put("functionResponses", JSONArray().apply {
           put(JSONObject().apply {
             put("id", id)
-            put("name", name)
             put("response", JSONObject().apply { put("result", result) })
           })
         })
@@ -206,50 +222,30 @@ Tool Guidance:
 
   fun sendText(text: String) {
     val msg = JSONObject().apply {
-      put("clientContent", JSONObject().apply {
-        put("turns", JSONArray().apply {
-          put(JSONObject().apply {
-            put("role", "user")
-            put("parts", JSONArray().apply { put(JSONObject().apply { put("text", text) }) })
-          })
-        })
-        put("turnComplete", true)
-      })
+      put("text", JSONObject().apply { put("content", text) })
     }
     webSocket?.send(msg.toString())
   }
 
   fun sendHistory(messages: List<Pair<String, String>>) {
-    if (messages.isEmpty()) return
-    val msg = JSONObject().apply {
-      put("clientContent", JSONObject().apply {
-        put("turns", JSONArray().apply {
-          messages.forEach { (role, content) ->
-            put(JSONObject().apply {
-              put("role", role)
-              put("parts", JSONArray().apply { put(JSONObject().apply { put("text", content) }) })
-            })
-          }
-        })
-        put("turnComplete", false)
-      })
+    if (messages.isEmpty()) { historyContext = ""; return }
+    val sb = StringBuilder("\n\n## Conversation so far:\n")
+    messages.forEach { (role, content) ->
+      sb.append("${if (role == "user") "User" else "Assistant"}: $content\n")
     }
-    android.util.Log.i(TAG, "Sending history (${messages.size} msgs): ${msg.toString().take(500)}")
-    webSocket?.send(msg.toString())
+    historyContext = sb.toString()
   }
 
   private fun startCapture(ws: WebSocket) {
     val bufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE_IN, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
     if (bufSize <= 0) return
 
-    // VOICE_COMMUNICATION enables platform-level echo cancellation path
     audioRecord = AudioRecord(
       MediaRecorder.AudioSource.VOICE_COMMUNICATION, SAMPLE_RATE_IN,
       AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize * 2
     )
     if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) { audioRecord?.release(); audioRecord = null; return }
 
-    // Enable AEC and noise suppression
     val sessionId = audioRecord!!.audioSessionId
     if (AcousticEchoCanceler.isAvailable()) {
       echoCanceler = AcousticEchoCanceler.create(sessionId)?.apply { enabled = true }
@@ -265,6 +261,7 @@ Tool Guidance:
       while (isActive && _isActive.value) {
         val read = audioRecord?.read(buf, 0, buf.size) ?: 0
         if (read > 0) {
+          // Amplitude for UI
           var sum = 0L
           for (i in 0 until read step 2) {
             val s = (buf[i].toInt() and 0xFF) or ((buf.getOrNull(i + 1)?.toInt() ?: 0) shl 8)
@@ -272,8 +269,10 @@ Tool Guidance:
             sum += (signed.toLong() * signed.toLong())
           }
           _amplitude.value = (kotlin.math.sqrt((sum / (read / 2)).toDouble()) / 32768.0).toFloat().coerceIn(0f, 1f)
+
+          // Send audio in gateway format
           val b64 = Base64.encodeToString(buf.copyOf(read), Base64.NO_WRAP)
-          ws.send("""{"realtimeInput":{"audio":{"data":"$b64","mimeType":"audio/pcm;rate=$SAMPLE_RATE_IN"}}}""")
+          ws.send("""{"audio":{"pcm":"$b64","sampleRate":$SAMPLE_RATE_IN}}""")
         }
       }
     }
@@ -293,74 +292,32 @@ Tool Guidance:
       .setTransferMode(AudioTrack.MODE_STREAM)
       .build()
     audioTrack?.play()
+
+    playbackJob = scope.launch {
+      while (isActive) {
+        val chunk = playbackQueue.poll(100, TimeUnit.MILLISECONDS)
+        if (chunk != null) {
+          try { audioTrack?.write(chunk, 0, chunk.size) } catch (_: Exception) {}
+        }
+      }
+    }
   }
 
   private fun playAudio(pcm: ByteArray) {
-    synchronized(playbackLock) {
-      val track = audioTrack ?: return
-      if (track.state != AudioTrack.STATE_INITIALIZED) return
-      try { track.write(pcm, 0, pcm.size) } catch (_: Exception) {}
-    }
+    playbackQueue.offer(pcm)
   }
 
   fun disconnect() {
     _isActive.value = false
     connecting = false
     captureJob?.cancel(); captureJob = null
+    playbackJob?.cancel(); playbackJob = null
+    playbackQueue.clear()
     echoCanceler?.release(); echoCanceler = null
     noiseSuppressor?.release(); noiseSuppressor = null
     audioRecord?.stop(); audioRecord?.release(); audioRecord = null
-    synchronized(playbackLock) { audioTrack?.stop(); audioTrack?.release(); audioTrack = null }
+    audioTrack?.stop(); audioTrack?.release(); audioTrack = null
     webSocket?.close(1000, "Done"); webSocket = null
     _amplitude.value = 0f
-  }
-
-  private fun buildSetup(voiceName: String, thinkingLevel: String): JSONObject = JSONObject().apply {
-    put("setup", JSONObject().apply {
-      put("model", "models/$MODEL")
-      put("generationConfig", JSONObject().apply {
-        put("responseModalities", JSONArray().apply { put("AUDIO") })
-        put("speechConfig", JSONObject().apply {
-          put("voiceConfig", JSONObject().apply {
-            put("prebuiltVoiceConfig", JSONObject().apply { put("voiceName", voiceName) })
-          })
-        })
-        put("thinkingConfig", JSONObject().apply {
-          put("thinkingLevel", thinkingLevel)
-        })
-      })
-      put("systemInstruction", JSONObject().apply {
-        put("parts", JSONArray().apply { put(JSONObject().apply { put("text", SYSTEM_PROMPT) }) })
-      })
-      put("historyConfig", JSONObject().apply {
-        put("initialHistoryInClientContent", true)
-      })
-      put("tools", JSONArray().apply {
-        put(JSONObject().apply { put("functionDeclarations", buildToolDeclarations()) })
-      })
-    })
-  }
-
-  private fun buildToolDeclarations(): JSONArray {
-    val decls = JSONArray()
-    fun tool(name: String, desc: String, params: String) {
-      decls.put(JSONObject().apply {
-        put("name", name); put("description", desc); put("parameters", JSONObject(params))
-      })
-    }
-    // All Pulse AI tools
-    tool("search", "Search the web. Use category 'images' for image results, 'general' (default) for web", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"category":{"type":"string","description":"general or images"}},"required":["query"]}""")
-    tool("fetch_url", "Fetch URL content. Modes: text (default), md, raw, image (saves locally)", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"text, md, raw, or image"}},"required":["url"]}""")
-    tool("list_directory", "List directory contents", """{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":["path"]}""")
-    tool("read_file", "Read file contents", """{"type":"object","properties":{"path":{"type":"string","description":"File path"}},"required":["path"]}""")
-    tool("write_file", "Write content to a file", """{"type":"object","properties":{"path":{"type":"string","description":"File path"},"content":{"type":"string","description":"File content"}},"required":["path","content"]}""")
-    tool("edit_file", "Edit a file by replacing text", """{"type":"object","properties":{"path":{"type":"string","description":"File path"},"old":{"type":"string","description":"Text to find"},"new":{"type":"string","description":"Replacement text"}},"required":["path","old","new"]}""")
-    tool("export_document", "Export a file to office format: docx, pdf, xlsx, csv", """{"type":"object","properties":{"path":{"type":"string","description":"Source file path"},"format":{"type":"string","description":"Target format: docx, pdf, xlsx, csv"}},"required":["path","format"]}""")
-    tool("get_location", "Get device GPS location", """{"type":"object","properties":{}}""")
-    tool("open_intent", "Open a URL, map, or app on the device", """{"type":"object","properties":{"uri":{"type":"string","description":"URI to open"}},"required":["uri"]}""")
-    tool("image_generate", "Generate an image from a text prompt", """{"type":"object","properties":{"prompt":{"type":"string","description":"Image generation prompt"}},"required":["prompt"]}""")
-    tool("memory_store", "Remember a fact across conversations", """{"type":"object","properties":{"key":{"type":"string","description":"Short key"},"content":{"type":"string","description":"Fact to remember"},"category":{"type":"string","description":"Category"}},"required":["key","content"]}""")
-    tool("memory_recall", "Search stored memories", """{"type":"object","properties":{"query":{"type":"string","description":"Search term"}},"required":["query"]}""")
-    return decls
   }
 }

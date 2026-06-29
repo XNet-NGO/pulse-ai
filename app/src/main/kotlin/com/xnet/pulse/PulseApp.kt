@@ -10,6 +10,7 @@ import dagger.hilt.android.HiltAndroidApp
 class PulseApp : Application(), ImageLoaderFactory {
   override fun onCreate() {
     super.onCreate()
+    com.xnet.pulse.core.network.GatewayConfig.key = BuildConfig.GATEWAY_KEY
     com.xnet.pulse.feature.chat.engine.DirectoryManager.init(this)
     com.xnet.pulse.feature.chat.engine.DocumentConverter.init(this)
   }

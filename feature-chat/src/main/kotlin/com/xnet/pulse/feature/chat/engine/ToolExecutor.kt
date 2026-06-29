@@ -31,33 +31,33 @@ class ToolExecutor @Inject constructor(
   private var searchUrl = "https://search.xnet.ngo"
 
   fun buildToolDefs(): List<ToolDef> = listOf(
-    ToolDef("search", "Search the web. Use category 'images' for image results, 'general' (default) for web results. Set count to control number of results (default 8, max 20).", """{"type":"object","properties":{"query":{"type":"string"},"category":{"type":"string"},"count":{"type":"integer"}},"required":["query"]}""", true),
-    ToolDef("fetch_url", "Fetch a URL. Modes: text (default), md, raw, image (saves image locally for display).", """{"type":"object","properties":{"url":{"type":"string"},"mode":{"type":"string"}},"required":["url"]}""", true),
-    ToolDef("list_directory", "List directory contents.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
+    ToolDef("search_web", "Search the web for current information.", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""", true),
+    ToolDef("search_images", "Search for images on the web.", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""", true),
+    ToolDef("fetch_url", "Fetch a URL and return extracted text content.", """{"type":"object","properties":{"url":{"type":"string"},"mode":{"type":"string","description":"text (default), raw, or image"}},"required":["url"]}""", true),
     ToolDef("read_file", "Read file contents.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
-    ToolDef("write_file", "Write content to a file.", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""", false),
-    ToolDef("edit_file", "Edit a file by replacing text. Use read_file first to see current content.", """{"type":"object","properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"}},"required":["path","old","new"]}""", false),
-    ToolDef("export_document", "Export a file to office format: docx, pdf, xlsx, csv. Can convert between formats.", """{"type":"object","properties":{"path":{"type":"string"},"format":{"type":"string"}},"required":["path","format"]}""", true),
+    ToolDef("write_file", "Write file.", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""", false),
+    ToolDef("list_directory", "List directory.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""", true),
     ToolDef("get_location", "Get device GPS location.", """{"type":"object","properties":{}}""", true),
-    ToolDef("open_intent", "Open a URL, map, or app.", """{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}""", false),
+    ToolDef("open_intent", "Open a URL, map, or app on device.", """{"type":"object","properties":{"uri":{"type":"string"}},"required":["uri"]}""", false),
     ToolDef("image_generate", "Generate an image from a text prompt.", """{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"]}""", true),
     ToolDef("memory_store", "Remember a fact across conversations.", """{"type":"object","properties":{"key":{"type":"string"},"content":{"type":"string"},"category":{"type":"string"}},"required":["key","content"]}""", true),
-    ToolDef("memory_recall", "Search memory. Empty query lists all.", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""", true),
+    ToolDef("memory_recall", "Search stored memories.", """{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""", true),
+    ToolDef("memory_forget", "Delete a memory by key.", """{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}""", false),
   )
 
   suspend fun execute(name: String, args: Map<String, Any?>): String = when (name) {
-    "search" -> search(args["query"]?.toString() ?: "", args["category"]?.toString() ?: "general", (args["count"] as? Number)?.toInt() ?: 8)
+    "search_web", "search", "search_location", "query_data" -> search(args["query"]?.toString() ?: (args["category"]?.toString() ?: ""), "general", 8)
+    "search_images" -> search(args["query"]?.toString() ?: "", "images", 8)
     "fetch_url" -> fetchUrl(args["url"]?.toString() ?: "", args["mode"]?.toString() ?: "text")
-    "list_directory" -> listDirectory(args["path"]?.toString() ?: "/")
     "read_file" -> readFile(args["path"]?.toString() ?: "")
     "write_file" -> writeFile(args["path"]?.toString() ?: "", args["content"]?.toString() ?: "")
-    "edit_file" -> editFile(args["path"]?.toString() ?: "", args["old"]?.toString() ?: "", args["new"]?.toString() ?: "")
-    "export_document" -> exportDocument(args["path"]?.toString() ?: "", args["format"]?.toString() ?: "pdf")
+    "list_directory" -> listDirectory(args["path"]?.toString() ?: "/")
     "get_location" -> getLocation()
     "open_intent" -> openIntent(args["uri"]?.toString() ?: "")
     "image_generate" -> imageGenerate(args["prompt"]?.toString() ?: "")
     "memory_store" -> memoryStore(args["key"]?.toString() ?: "", args["content"]?.toString() ?: "", args["category"]?.toString() ?: "general")
     "memory_recall" -> memoryRecall(args["query"]?.toString() ?: "")
+    "memory_forget" -> memoryForget(args["key"]?.toString() ?: "")
     else -> "Unknown tool: $name"
   }
 
@@ -294,6 +294,52 @@ class ToolExecutor @Inject constructor(
     val memories = if (query.isBlank()) dao.getAllMemories() else dao.searchMemories(query)
     if (memories.isEmpty()) return "No memories found"
     return memories.joinToString("\n") { "• ${it.key}: ${it.content} [${it.category}]" }
+  }
+
+  private suspend fun memoryForget(key: String): String {
+    if (key.isBlank()) return "Error: key required"
+    dao.deleteMemory(key)
+    return "Deleted memory: $key"
+  }
+
+  private fun runShell(command: String): String {
+    return try {
+      val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+      val output = process.inputStream.bufferedReader().readText()
+      val error = process.errorStream.bufferedReader().readText()
+      process.waitFor()
+      (output + error).take(4000).ifBlank { "(no output)" }
+    } catch (e: Exception) { "Error: ${e.message}" }
+  }
+
+  private fun deviceInfo(): String {
+    val rt = Runtime.getRuntime()
+    return "Model: ${android.os.Build.MODEL}\nAndroid: ${android.os.Build.VERSION.RELEASE}\nFree RAM: ${rt.freeMemory() / 1024 / 1024}MB\nTotal RAM: ${rt.totalMemory() / 1024 / 1024}MB"
+  }
+
+  private fun clipboardCopy(text: String): String {
+    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    cm.setPrimaryClip(android.content.ClipData.newPlainText("pulse", text))
+    return "Copied to clipboard"
+  }
+
+  private fun clipboardRead(): String {
+    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    return cm.primaryClip?.getItemAt(0)?.text?.toString() ?: "(clipboard empty)"
+  }
+
+  private fun sendNotification(title: String, body: String): String {
+    try {
+      val nm = ctx.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+      val channel = android.app.NotificationChannel("pulse_tools", "Pulse Tools", android.app.NotificationManager.IMPORTANCE_DEFAULT)
+      nm.createNotificationChannel(channel)
+      val n = android.app.Notification.Builder(ctx, "pulse_tools")
+        .setContentTitle(title).setContentText(body)
+        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .build()
+      nm.notify(System.currentTimeMillis().toInt(), n)
+      return "Notification sent: $title"
+    } catch (e: Exception) { return "Error: ${e.message}" }
   }
 
 }

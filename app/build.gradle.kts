@@ -5,6 +5,12 @@ plugins {
   alias(libs.plugins.hilt)
 }
 
+import java.util.Properties
+
+val secrets = Properties().apply {
+  rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+
 android {
   namespace = "com.xnet.pulse"
   compileSdk = 36
@@ -13,16 +19,22 @@ android {
     applicationId = "com.xnet.pulse"
     minSdk = 26
     targetSdk = 35
-    versionCode = 1
-    versionName = "1.0.0"
+    versionCode = 2
+    versionName = "1.1.0"
+    buildConfigField("String", "GATEWAY_KEY", "\"${secrets.getProperty("GATEWAY_KEY", "")}\"")
+  }
+
+  buildFeatures {
+    buildConfig = true
+    compose = true
   }
 
   signingConfigs {
     create("release") {
-      storeFile = rootProject.file("release.keystore")
-      storePassword = "pulsexnet2026"
-      keyAlias = "pulse"
-      keyPassword = "pulsexnet2026"
+      storeFile = rootProject.file("../xnet-keystore/xnet-upload.keystore")
+      storePassword = "UploadXnet2026!"
+      keyAlias = "xnet-upload"
+      keyPassword = "UploadXnet2026!"
     }
   }
 
@@ -38,10 +50,6 @@ android {
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
-  }
-
-  buildFeatures {
-    compose = true
   }
 }
 
