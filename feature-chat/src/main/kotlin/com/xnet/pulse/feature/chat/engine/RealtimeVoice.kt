@@ -99,6 +99,7 @@ Constraints:
         val setup = JSONObject().apply {
           put("setup", JSONObject().apply {
             put("systemPrompt", SYSTEM_PROMPT + historyContext)
+            put("voiceName", voiceName)
             put("tools", JSONArray().apply {
               fun tool(name: String, desc: String, params: String) {
                 put(JSONObject().apply {
@@ -133,7 +134,6 @@ Constraints:
             _isActive.value = true
             connecting = false
             startCapture(ws)
-            startPlayback()
             return
           }
 
@@ -237,6 +237,16 @@ Constraints:
   }
 
   private fun startCapture(ws: WebSocket) {
+    // Enable speaker for voice call
+    val am = ctx.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+    am.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+    am.isSpeakerphoneOn = true
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+      val speaker = am.availableCommunicationDevices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+      if (speaker != null) am.setCommunicationDevice(speaker)
+    }
+    am.setStreamVolume(android.media.AudioManager.STREAM_VOICE_CALL, (am.getStreamMaxVolume(android.media.AudioManager.STREAM_VOICE_CALL) * 0.85).toInt(), 0)
+
     val bufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE_IN, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
     if (bufSize <= 0) return
 
@@ -253,6 +263,9 @@ Constraints:
     if (NoiseSuppressor.isAvailable()) {
       noiseSuppressor = NoiseSuppressor.create(sessionId)?.apply { enabled = true }
     }
+
+    // Start playback with shared session ID for AEC pairing
+    startPlayback(sessionId)
 
     audioRecord?.startRecording()
 
@@ -278,9 +291,9 @@ Constraints:
     }
   }
 
-  private fun startPlayback() {
+  private fun startPlayback(sessionId: Int = 0) {
     val bufSize = AudioTrack.getMinBufferSize(SAMPLE_RATE_OUT, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-    audioTrack = AudioTrack.Builder()
+    val builder = AudioTrack.Builder()
       .setAudioAttributes(AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
@@ -290,7 +303,8 @@ Constraints:
         .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
       .setBufferSizeInBytes(bufSize * 4)
       .setTransferMode(AudioTrack.MODE_STREAM)
-      .build()
+    if (sessionId != 0) builder.setSessionId(sessionId)
+    audioTrack = builder.build()
     audioTrack?.play()
 
     playbackJob = scope.launch {
@@ -319,5 +333,14 @@ Constraints:
     audioTrack?.stop(); audioTrack?.release(); audioTrack = null
     webSocket?.close(1000, "Done"); webSocket = null
     _amplitude.value = 0f
+    // Restore audio mode
+    try {
+      val am = ctx.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+      am.mode = android.media.AudioManager.MODE_NORMAL
+      am.isSpeakerphoneOn = false
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        am.clearCommunicationDevice()
+      }
+    } catch (_: Exception) {}
   }
 }

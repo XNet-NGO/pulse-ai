@@ -13,6 +13,7 @@ import com.xnet.pulse.feature.chat.engine.AttachmentProcessor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -45,6 +46,7 @@ class ChatViewModel @Inject constructor(
   val conversations = dao.getConversations()
 
   private var currentConvId: String = UUID.randomUUID().toString()
+  private var titleGenerated = false
   private var model = "pollinations-pollen/mistral-4"
 
   init {
@@ -54,6 +56,7 @@ class ChatViewModel @Inject constructor(
 
   fun loadConversation(id: String) {
     currentConvId = id
+    titleGenerated = true // existing conversation already has title
     viewModelScope.launch {
       _messages.value = dao.getMessages(id).map { it.toDomain() }
     }
@@ -61,6 +64,7 @@ class ChatViewModel @Inject constructor(
 
   fun newConversation() {
     currentConvId = UUID.randomUUID().toString()
+    titleGenerated = false
     _messages.value = emptyList()
     viewModelScope.launch { dao.insertConversation(ConversationEntity(id = currentConvId)) }
   }
@@ -124,22 +128,41 @@ class ChatViewModel @Inject constructor(
       dao.insertMessage(final.toEntity())
     }
     // Generate title on first exchange
-    val msgCount = _messages.value.count { it.conversationId == currentConvId }
-    if (msgCount == 2) generateTitle()
+    if (!titleGenerated) {
+      titleGenerated = true
+      generateTitle()
+    }
   }
 
   private fun generateTitle() {
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       try {
         val userMsg = _messages.value.firstOrNull { it.role == Role.USER }?.content?.take(200) ?: return@launch
-        val msgs = listOf(JSONObject().put("role", "user").put("content", "Generate a short title (max 6 words, no quotes) for a conversation that starts with: $userMsg"))
-        val sb = StringBuilder()
-        client.stream(msgs, "nova-fast").collect { ev ->
-          if (ev is StreamEvent.Delta) sb.append(ev.text)
+        val body = org.json.JSONObject().apply {
+          put("model", "pollinations-pollen/nova-fast")
+          put("stream", false)
+          put("max_tokens", 30)
+          put("temperature", 0.3)
+          put("messages", org.json.JSONArray().apply {
+            put(org.json.JSONObject().put("role", "user").put("content",
+              "Generate a short title (max 6 words) for a conversation that starts with: \"$userMsg\". Reply with ONLY the title, no quotes."))
+          })
         }
-        val title = sb.toString().trim().take(50)
-        if (title.isNotBlank()) dao.updateConversation(currentConvId, title)
-      } catch (_: Exception) {}
+        val request = okhttp3.Request.Builder()
+          .url("https://inf.xnet.ngo/v1/chat/completions")
+          .header("Content-Type", "application/json")
+          .header("Authorization", "Bearer ${com.xnet.pulse.core.network.GatewayConfig.key}")
+          .post(okhttp3.RequestBody.Companion.create("application/json".toMediaType(), body.toString()))
+          .build()
+        val response = okhttp3.OkHttpClient().newCall(request).execute()
+        val text = response.body?.string() ?: return@launch
+        response.close()
+        val json = org.json.JSONObject(text)
+        val title = json.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "")?.trim()?.take(50) ?: return@launch
+        if (title.isNotBlank() && title != "New Chat") dao.updateConversation(currentConvId, title)
+      } catch (e: Exception) {
+        android.util.Log.w("PulseVM", "title gen failed: ${e.message}")
+      }
     }
   }
 
